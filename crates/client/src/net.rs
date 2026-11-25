@@ -1,5 +1,6 @@
 //! Rede no cliente: conecta ao servidor (Node.js atual) numa thread Tokio e traz os eventos para o laço do Bevy.
 
+use crate::look::{AvatarKit, AvatarLook};
 use crate::player::{Me, Remote, avatar_scene};
 use crate::state::{ActorName, ChatLog, ConnectError, ConnectRequest, Screen, SendChat, Session};
 use bevy::prelude::*;
@@ -49,6 +50,7 @@ fn start(
     mut reqs: MessageReader<ConnectRequest>,
     rt: Option<Res<Runtime>>,
     mut s: ResMut<Session>,
+    kit: Option<Res<AvatarKit>>,
 ) {
     let Some(r) = reqs.read().last().cloned() else { return };
     let runtime = match rt {
@@ -70,7 +72,8 @@ fn start(
         server: r.server,
         identity_path: identity_path(),
         name: r.name,
-        cfg: Default::default(),
+        // o visual deste avatar (o mesmo que aparece aqui), para os outros verem igual
+        cfg: kit.map(|k| k.reference_map()).unwrap_or_default(),
         enter: match r.join {
             Some(code) => Enter::Join { code },
             None => Enter::Create { world: r.world, bots: r.bots },
@@ -84,18 +87,21 @@ fn start(
     commands.insert_resource(Pending(Mutex::new(rx)));
 }
 
-fn spawn_actor(commands: &mut Commands, assets: &AssetServer, p: &PlayerPub) -> Entity {
+fn spawn_actor(commands: &mut Commands, assets: &AssetServer, kit: Option<&AvatarKit>, p: &PlayerPub) -> Entity {
     let mut r = Remote::default();
     r.push(0.0, p.x, p.z, p.ry, p.y);
-    commands
-        .spawn((
-            r,
-            avatar_scene(assets),
-            Transform::from_xyz(p.x, p.y, p.z),
-            ActorName(p.name.clone()),
-            Name::new(p.name.clone()),
-        ))
-        .id()
+    let mut e = commands.spawn((
+        r,
+        avatar_scene(assets),
+        Transform::from_xyz(p.x, p.y, p.z),
+        ActorName(p.name.clone()),
+        Name::new(p.name.clone()),
+    ));
+    // o cfg vem de outro jogador: validado contra as faixas do catálogo antes de usar
+    if let Some(cfg) = kit.and_then(|k| k.palettes.clean(&p.cfg)) {
+        e.insert(AvatarLook(cfg));
+    }
+    e.id()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -108,6 +114,7 @@ fn finish_connect(
     mut session: ResMut<Session>,
     mut err: ResMut<ConnectError>,
     mut next: ResMut<NextState<Screen>>,
+    kit: Option<Res<AvatarKit>>,
 ) {
     let Some(p) = pending else { return };
     let r = p.0.lock().ok().and_then(|rx| rx.try_recv().ok());
@@ -131,7 +138,7 @@ fn finish_connect(
     }
     let mut actors = HashMap::new();
     for p in j.players.iter().filter(|p| p.id != j.id) {
-        actors.insert(p.id, spawn_actor(&mut commands, &assets, p));
+        actors.insert(p.id, spawn_actor(&mut commands, &assets, kit.as_deref(), p));
     }
     *session = Session {
         online: true,
@@ -156,6 +163,8 @@ fn receive(
     mut session: ResMut<Session>,
     mut next: ResMut<NextState<Screen>>,
     mut err: ResMut<ConnectError>,
+    kit: Option<Res<AvatarKit>>,
+    mut looks: Query<&mut AvatarLook>,
 ) {
     let Some(mut net) = net else { return };
     let now = time.elapsed_secs_f64() * 1000.0;
@@ -181,7 +190,7 @@ fn receive(
                 }
             }
             NetEvent::Server(ServerMsg::PlayerJoined(p)) if p.id != net.me => {
-                let ent = spawn_actor(&mut commands, &assets, &p);
+                let ent = spawn_actor(&mut commands, &assets, kit.as_deref(), &p);
                 if let Some(old) = net.actors.insert(p.id, ent) {
                     commands.entity(old).despawn();
                 }
@@ -199,6 +208,18 @@ fn receive(
                 }
             }
             NetEvent::Server(ServerMsg::Cap { max }) => session.max = max,
+            NetEvent::Server(ServerMsg::Cfg { id, cfg }) => {
+                if let (Some(&ent), Some(kit)) = (net.actors.get(&id), kit.as_deref())
+                    && let Some(c) = kit.palettes.clean(&cfg)
+                {
+                    match looks.get_mut(ent) {
+                        Ok(mut l) => l.0 = c,
+                        Err(_) => {
+                            commands.entity(ent).insert(AvatarLook(c));
+                        }
+                    }
+                }
+            }
             NetEvent::Server(ServerMsg::Chat { name, text, .. }) => {
                 log.push(name, sky_security::clean_chat(&text, sky_shared::limits::CHAT), false);
             }

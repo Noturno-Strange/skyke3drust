@@ -5792,10 +5792,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sky-avatars"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "sky-client"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "serde",
+ "serde_json",
+ "sky-avatars",
  "sky-networking",
  "sky-protocol",
  "sky-rendering",

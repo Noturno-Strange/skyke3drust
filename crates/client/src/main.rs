@@ -11,6 +11,7 @@
 
 mod args;
 mod hud;
+mod look;
 mod menu;
 mod net;
 mod player;
@@ -52,7 +53,12 @@ fn main() {
     .add_message::<ConnectRequest>()
     .add_message::<SendChat>()
     .add_plugins((WorldPlugin { assets_dir: assets.clone() }, sky_ui::SkyUiPlugin))
-    .add_plugins((player::PlayerPlugin, net::NetPlugin, hud::HudPlugin))
+    .add_plugins((
+        look::LookPlugin { assets_dir: assets.clone() },
+        player::PlayerPlugin,
+        net::NetPlugin,
+        hud::HudPlugin,
+    ))
     .insert_resource(a.clone())
     .add_systems(Startup, setup);
     if let Some(shot) = &a.shot {

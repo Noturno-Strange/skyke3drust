@@ -45,6 +45,7 @@ crates/
   scripting/    Rhai em sandbox (limites, cache de compilação, recarga)
   persistence/  gravação atômica e perfis online/offline separados
   networking/   cliente Tokio: ticket → WebSocket → identidade → sala
+  avatars/      paletas e validação do visual, rosto gerado por pixel (idêntico ao navegador)
   ui/           tema do original (escuro, claro, alto contraste), fonte Manrope, painel, botão, campo de texto
   rendering/    material toon WGSL que reproduz o MeshToonMaterial do original, mipmaps
   world/        carrega os mundos exportados (GLB + world.json), troca materiais, sprites
@@ -53,6 +54,7 @@ tools/
   asset-exporter/     exporta mundos e avatar do cliente web original para GLB + metadados + capturas
   visual-comparator/  compara capturas nativas com as de referência (PSNR, mapa de diferenças)
 assets/  worlds/, avatars/, shaders/, fonts/
+data/    catalogs/catalog.json (catálogo do original: paletas, itens, receitas, plantas, remédios)
 docs/    auditoria do original, protocolo, estado da migração, Rhai, ferramentas
 ```
 

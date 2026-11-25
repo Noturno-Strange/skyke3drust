@@ -23,6 +23,9 @@ sky-networking.workspace = true
 sky-rendering.workspace = true
 sky-world.workspace = true
 sky-ui.workspace = true
+sky-avatars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 sky-security.workspace = true
 tokio.workspace = true
 bevy = { workspace = true, features = ["3d", "png", "x11", "wayland", "multi_threaded", "std", "default_font", "ui"] }

@@ -55,8 +55,12 @@ pub fn avatar_scene(assets: &AssetServer) -> WorldAssetRoot {
     WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("avatars/default.glb")))
 }
 
-fn spawn_me(mut commands: Commands, assets: Res<AssetServer>) {
-    commands.spawn((Me::default(), avatar_scene(&assets), Transform::from_xyz(0.0, 0.0, 5.0), Name::new("eu")));
+fn spawn_me(mut commands: Commands, assets: Res<AssetServer>, kit: Option<Res<crate::look::AvatarKit>>) {
+    let mut e =
+        commands.spawn((Me::default(), avatar_scene(&assets), Transform::from_xyz(0.0, 0.0, 5.0), Name::new("eu")));
+    if let Some(kit) = kit {
+        e.insert(crate::look::AvatarLook(kit.reference.clone()));
+    }
 }
 
 /// Mantém dentro da área caminhável (círculo de raio 10,2 m em volta de (0, 1,2)).

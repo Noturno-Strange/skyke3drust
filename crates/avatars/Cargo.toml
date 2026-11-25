@@ -1,0 +1,21 @@
+[package]
+name = "sky-avatars"
+description = "Avatares do Skyke3D: visual (cfg), paletas do catálogo e geração procedural portada do cliente web."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }

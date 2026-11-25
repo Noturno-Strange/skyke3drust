@@ -53,3 +53,18 @@ Cria uma sala com 3 bots e mostra o que chega do servidor durante alguns segundo
 
 `cargo run -p sky-identity --example sign_demo` imprime chave pública e assinatura; conferir no Node.js com
 `crypto.verify('sha256', dados, {key, dsaEncoding:'ieee-p1363'}, assinatura)` (o mesmo código de `lib/identity.js`).
+
+## Catálogo (`tools/catalog-export`)
+
+```bash
+node tools/catalog-export/export.js --original ../skyke3d --out data/catalogs/catalog.json
+```
+
+Copia para JSON os dados de `assets/catalog.js` e `assets/medicine.js` do original (paletas, rostos, cabelos, itens,
+ingredientes, 182 receitas, 100 plantas, fazenda, gestos, emojis, remédios), sem funções nem índices derivados.
+
+## Referências de avatar
+
+O exportador também grava `avatar/ref-head/` (texturas de cabeça geradas pelo próprio `headMat` do jogo para 16
+visuais) e `cases.json`. O teste `matches_browser_reference` de `sky-avatars` exige que o port em Rust dê o mesmo
+resultado; hoje é idêntico pixel a pixel.

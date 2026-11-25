@@ -280,6 +280,31 @@ async function main() {
     g.position.copy(pos);
     g.rotation.y = rot;
   }
+  // Texturas de cabeça geradas pelo próprio headMat do jogo, para conferir o port em Rust (crates/avatars/src/head.rs).
+  if (typeof headMat === 'function') {
+    const base = { skin: 0, eye: 0, hair: 0, hs: 0, hat: 0, hc: 0, fc: 0, tb: 0, eb: 0, rb: 0 };
+    const C = [
+      [{}, 0], [{ fc: 1, skin: 3, eye: 2, hair: 5, hs: 3 }, 0], [{ fc: 2, skin: 7, hs: 5 }, 0], [{ fc: 3, eye: 9, hs: 24 }, 0],
+      [{ fc: 4, skin: 12, hs: 25, hair: 9 }, 0], [{ fc: 5, eb: 1, eye: 4 }, 0], [{ fc: 6, tb: 1, skin: 2 }, 0], [{ fc: 7, hs: 7 }, 0],
+      [{ fc: 8, hs: 31, rb: 1, hair: 12 }, 0], [{ fc: 9, hs: 11, eye: 6 }, 0], [{ fc: 10, hs: 16, skin: 10 }, 0],
+      [{ fc: 11, hs: 17, skin: 14 }, 0], [{ fc: 12, eye: 12, hs: 27 }, 0], [{ fc: 0, hat: 2, hc: 5 }, 0], [{ fc: 0 }, 1], [{ fc: 6, eb: 1, hat: 1 }, 2]
+    ];
+    const cases = [];
+    for (let i = 0; i < C.length; i++) {
+      const [d, mv] = C[i],
+        c = { ...base, ...d },
+        m = headMat(c, mv),
+        img = m.map.image,
+        cv = document.createElement('canvas');
+      cv.width = img.width;
+      cv.height = img.height;
+      cv.getContext('2d').drawImage(img, 0, 0);
+      const name = 'head-' + String(i).padStart(2, '0') + '.png';
+      await send('avatar/ref-head/' + name, await new Promise(r => cv.toBlob(r, 'image/png')), 'image/png');
+      cases.push([name, c, mv]);
+    }
+    await send('avatar/ref-head/cases.json', JSON.stringify(cases), 'application/json');
+  }
   await fetch('/__export/done', { method: 'POST' });
 }
 addEventListener('error', e => log('erro: ' + e.message + ' ' + (e.filename || '') + ':' + (e.lineno || '')));
