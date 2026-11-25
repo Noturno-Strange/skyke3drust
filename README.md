@@ -12,7 +12,7 @@ agora sobre Rust, Bevy (WGPU/Vulkan), shaders WGSL e scripts Rhai.
 
 ## Rodar
 
-Requisitos: Rust 1.85+ e, no Linux, `libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev` (ou equivalentes).
+Requisitos: Rust 1.85+ e, no Linux, `libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libfontconfig1-dev` (ou equivalentes).
 
 ```bash
 cargo run --release -p sky-client --bin skyke3d                         # tela inicial
