@@ -29,17 +29,19 @@ com diferença maior que 24 em algum canal.
 
 | Mundo | Câmera do jogo: PSNR / pixels diferentes | Visão alta: PSNR / pixels diferentes |
 | --- | --- | --- |
-| Amazora | 27,3 dB / 5,1 % | 30,0 dB / 2,1 % |
-| Cerron | 23,8 dB / 11,1 % | 23,6 dB / 15,8 % |
-| Atlanthia | 24,3 dB / 8,3 % | 25,7 dB / 9,8 % |
-| Caatara | 23,6 dB / 18,6 % | 25,7 dB / 11,4 % |
-| Panthara | 26,1 dB / 8,6 % | 24,6 dB / 13,0 % |
-| Pamphora | 23,9 dB / 11,9 % | 22,9 dB / 17,5 % |
+| Amazora | 33,3 dB / 1,3 % | 36,6 dB / 0,6 % |
+| Cerron | 30,7 dB / 1,8 % | 32,8 dB / 2,2 % |
+| Atlanthia | 32,4 dB / 1,1 % | 36,9 dB / 0,6 % |
+| Caatara | 29,9 dB / 4,2 % | 35,3 dB / 1,0 % |
+| Panthara | 31,8 dB / 3,0 % | 31,2 dB / 4,2 % |
+| Pamphora | 33,1 dB / 2,1 % | 35,3 dB / 1,2 % |
 
 Histórico (câmera do jogo, Cerron): 39,7 % na primeira renderização → 16,7 % com domo do céu, chão e neblina em
 sRGB → 10,6 % com sombras e cores de luz lidas sem conversão (o original desliga o `THREE.ColorManagement`, então
 cores definidas por hex entram cruas no shader). Caatara: 25,9 % → 18,6 % com a mistura aditiva
-(sol e brilhos) multiplicada pelo alfa, como `AdditiveBlending` do three.js. As capturas de referência variam um
+(sol e brilhos) multiplicada pelo alfa, como `AdditiveBlending` do three.js. Depois, 1–4 % em todos os mundos com
+duas correções: a queda da luz da fogueira que o original troca pela do three r128 (`(1 − d/alcance)^queda`) e o
+sinal da normal de faces com `flatShading` (o eixo y da tela tem sentido oposto entre WGSL e GLSL). As capturas de referência variam um
 pouco entre exportações por causa da cintilação da fogueira.
 
 Para reproduzir: ver [ferramentas.md](ferramentas.md).
@@ -48,15 +50,10 @@ Para reproduzir: ver [ferramentas.md](ferramentas.md).
 
 1. **Fauna 2D, partículas e efeitos animados** (`app-life.js`, `partBuild`, chamas, brasas, água): exportados só
    como geometria parada ou ausentes. Precisam de sistemas próprios (Rhai para comportamento, Rust para desenho).
-2. **Luz da fogueira nos troncos**: no original, os troncos ficam bem mais laranja. A matemática do toon e da
-   atenuação foi conferida linha a linha com o three.js r186; falta descobrir a origem (cintilação no momento da
-   captura, brilho aditivo ou outra contribuição).
-3. **Mancha escura sob a fogueira**: a malha de sombras de contato aparece mais escura que no original perto da
-   fogueira.
-4. **Sombras**: implementadas com o mapa de sombra do Bevy (1 cascata de 32 m a partir da câmera, 2048 px), só para
-   os objetos que o original marca (`markCasters`) e os avatares. O original usa uma caixa de 28 m que segue o
-   jogador, com PCF 1024: o formato e a suavidade das bordas diferem um pouco.
-5. Pequenas diferenças de serrilhado (MSAA 4× nativo × antialias do navegador).
+2. **Chão sob a fogueira** um pouco mais escuro que no original (o círculo escuro de 2,1 m aparece levemente).
+3. **Sombras**: o mapa de sombra do Bevy (1 cascata de 32 m a partir da câmera, 2048 px) em vez da caixa de 28 m que
+   segue o jogador com PCF 1024 do original; o formato e a suavidade das bordas diferem um pouco.
+4. Pequenas diferenças de serrilhado (MSAA 4× nativo × antialias do navegador).
 
 ## O que funciona hoje
 

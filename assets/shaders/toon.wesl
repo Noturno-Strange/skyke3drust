@@ -112,14 +112,13 @@ fn mesh_color(in: VertexOutput) -> vec4<f32> { return in.color; }
 @if(!VERTEX_COLORS)
 fn mesh_color(in: VertexOutput) -> vec4<f32> { return vec4<f32>(1.0); }
 
-// getDistanceAttenuation do three.js
+// Queda da luz pontual: o jogo original troca a do three.js atual (1/d²) pela do three r128,
+// (1 − d/alcance)^queda, para os troncos receberem o brilho laranja da fogueira (assets/app-base.js).
 fn distance_attenuation(d: f32, cutoff: f32, decay: f32) -> f32 {
-    var f = 1.0 / max(pow(d, decay), 0.01);
-    if cutoff > 0.0 {
-        let r = clamp(1.0 - pow(d / cutoff, 4.0), 0.0, 1.0);
-        f = f * r * r;
+    if cutoff > 0.0 && decay > 0.0 {
+        return pow(clamp(1.0 - d / cutoff, 0.0, 1.0), decay);
     }
-    return f;
+    return 1.0;
 }
 
 @fragment
@@ -154,7 +153,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @locatio
     if (p.flags & F_TOON) != 0u {
         var n = normalize(in.world_normal);
         if (p.flags & F_FLAT) != 0u {
-            n = normalize(cross(dpdx(in.world_position.xyz), dpdy(in.world_position.xyz)));
+            // flatShading: normal da face pelas derivadas. O sinal de cross(dpdx, dpdy) depende da orientação do eixo y
+            // da tela (oposta entre WGSL e GLSL); a normal da face fica do mesmo lado da normal do vértice.
+            let fl = normalize(cross(dpdx(in.world_position.xyz), dpdy(in.world_position.xyz)));
+            n = select(fl, -fl, dot(fl, in.world_normal) < 0.0);
         } else if (p.flags & F_DOUBLE) != 0u && !is_front {
             n = -n;
         }
