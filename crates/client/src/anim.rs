@@ -162,7 +162,9 @@ fn animate(
     time: Res<Time>,
     mut actors: Query<(&GlobalTransform, &mut Rig, Option<&Me>, Option<&Remote>, Option<&crate::gestures::Gesture>)>,
     mut joints: Query<&mut Transform, Without<Rig>>,
+    world: Option<Res<sky_world::CurrentWorld>>,
 ) {
+    let seats = world.as_ref().map(|w| crate::player::seats(w)).unwrap_or_default();
     let dt = time.delta_secs().max(0.0001);
     for (gt, mut rig, me, remote, gest) in &mut actors {
         let pos = gt.translation();
@@ -176,10 +178,17 @@ fn animate(
             rig.spd += (moved / dt - rig.spd) * 0.25;
         }
         rig.ph += dt * rig.spd * 3.4;
-        let sitting = remote.is_some_and(|r| r.sitting);
+        // sentado: o jogador local sabe o assento; para os outros, o assento a menos de 0,5 m (`seatAt`)
+        let seat = match me {
+            Some(me) => me.seat,
+            None if remote.is_some_and(|r| r.sitting) => crate::player::seat_near(&seats, pos.x, pos.z, 0.5)
+                .or(Some(crate::player::SeatPose { x: pos.x, z: pos.z, r: 0.0, h: 0.45, fo: 0.0, k: 1.4 })),
+            None => None,
+        };
+        let sitting = seat.is_some();
         let mut p = Pose::rest(rig.fy);
-        if sitting {
-            p.sit(0.45, 0.0, 1.4);
+        if let Some(s) = seat {
+            p.sit(s.h, s.fo, s.k);
         }
         let sp = if sitting { 0.0 } else { (rig.spd / 2.2).min(1.0) };
         let air = !sitting && pos.y > 0.07;
@@ -189,8 +198,9 @@ fn animate(
             if sitting {
                 p.lg_l = Vec3::new(-1.4, 0.0, 0.0);
                 p.lg_r = Vec3::new(-1.4, 0.0, 0.0);
-                p.kn_l = Vec3::new(1.4, 0.0, 0.0);
-                p.kn_r = Vec3::new(1.4, 0.0, 0.0);
+                let k = seat.map_or(1.4, |s| s.k);
+                p.kn_l = Vec3::new(k, 0.0, 0.0);
+                p.kn_r = Vec3::new(k, 0.0, 0.0);
                 p.lg_l_y = 0.72;
                 p.lg_r_y = 0.72;
                 p.fig_pos.y += 0.52 * (2.0 - p.fig_rot.z.cos() - p.fig_rot.x.cos()) + 0.52 * (1.0 - p.fig_scale.y);

@@ -57,8 +57,9 @@ Para reproduzir: ver [ferramentas.md](ferramentas.md).
 
 ## O que funciona hoje
 
-* `skyke3d --world <mundo>`: abre qualquer um dos 6 mundos com os modelos originais. Caminha com WASD/setas e gira a
-  câmera com Q/E (3,2 m/s, mesma câmera do jogo web).
+* `skyke3d --world <mundo> --explore`: abre qualquer um dos 6 mundos com os modelos originais. Anda com WASD/setas
+  (3,2 m/s), pula com E, senta com F perto de um assento e gira a câmera arrastando com o botão direito, como no
+  jogo web (falta andar clicando no chão).
 * `skyke3d --server http://localhost:3000 --name Ana --world cerron --bots 3`: resolve o ticket, registra ou prova a
   identidade, cria a sala no servidor Node.js atual, mostra os outros jogadores (interpolação de 230 ms) e envia a
   própria posição; `--join CODIGO` entra numa sala existente. Navegador e cliente nativo podem estar na mesma sala.

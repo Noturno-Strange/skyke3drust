@@ -22,7 +22,8 @@ cargo run --release -p sky-client --bin skyke3d -- --world cerron --explore   # 
 | Tecla | Ação |
 | --- | --- |
 | W A S D / setas | andar |
-| Q / E | girar a câmera |
+| E / F | pular / sentar (perto de um assento) |
+| botão direito | arrastar gira a câmera; clique alterna câmera padrão / de frente |
 | Enter / Esc | abrir e enviar o chat / voltar ao jogo |
 
 Entrar no servidor do jogo (o mesmo do navegador):

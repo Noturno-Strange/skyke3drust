@@ -177,7 +177,7 @@ fn spawn_menu(
     }
     let help = commands
         .spawn((
-            Text::new("Teclas: W A S D ou setas para andar · Q e E giram a câmera · Enter abre o chat"),
+            Text::new("W A S D ou setas andam · E pula · F senta · botão direito arrastando gira a câmera · Enter abre o chat"),
             f.font(13.0, 500),
             TextColor(start.fg.with_alpha(0.75)),
         ))

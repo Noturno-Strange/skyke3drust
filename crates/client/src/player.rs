@@ -26,6 +26,45 @@ impl Plugin for PlayerPlugin {
 #[derive(Component, Debug, Default)]
 pub struct Me {
     pub moving: bool,
+    /// Sentado neste assento.
+    pub seat: Option<SeatPose>,
+    /// Altura do pulo e velocidade vertical.
+    pub jy: f32,
+    pub vy: f32,
+}
+
+/// Assento: posição, giro e a pose de quem senta (altura, deslocamento do corpo, dobra do joelho), como `seat()`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SeatPose {
+    pub x: f32,
+    pub z: f32,
+    pub r: f32,
+    pub h: f32,
+    pub fo: f32,
+    pub k: f32,
+}
+
+/// Assentos do mundo atual.
+pub fn seats(world: &sky_world::CurrentWorld) -> Vec<SeatPose> {
+    let num = |s: &sky_world::meta::Seat, k: &str, d: f32| {
+        s.extra.get(k).and_then(serde_json::Value::as_f64).map_or(d, |v| v as f32)
+    };
+    world
+        .meta
+        .seats
+        .iter()
+        .map(|s| SeatPose { x: s.x, z: s.z, r: s.r, h: num(s, "h", 0.45), fo: num(s, "fo", 0.0), k: num(s, "k", 1.4) })
+        .collect()
+}
+
+/// Assento mais perto de (x, z) a menos de `max` metros (`seatAt` usa 0,5; sentar procura até 1,5).
+pub fn seat_near(seats: &[SeatPose], x: f32, z: f32, max: f32) -> Option<SeatPose> {
+    seats
+        .iter()
+        .map(|s| (s, (s.x - x).hypot(s.z - z)))
+        .filter(|(_, d)| *d < max)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(s, _)| *s)
 }
 
 /// Outro jogador ou bot, posicionado pelos pacotes de estado.
@@ -48,6 +87,8 @@ pub struct Snap {
 pub struct Controls {
     pub cam_yaw: f32,
     pub cam_yaw_smooth: f32,
+    /// Botão direito pressionado: distância arrastada e se já virou giro.
+    pub orbit: Option<(f32, bool)>,
 }
 
 pub fn avatar_scene(assets: &AssetServer) -> WorldAssetRoot {
@@ -70,6 +111,7 @@ pub fn clamp_walk(p: Vec2) -> Vec2 {
     if d.length() > 10.2 { c + d.normalize() * 10.2 } else { p }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
@@ -77,6 +119,9 @@ fn walk(
     mut me: Query<(&mut Transform, &mut Me)>,
     focus: Res<bevy::input_focus::InputFocus>,
     inputs: Query<(), With<bevy::text::EditableText>>,
+    world: Option<Res<sky_world::CurrentWorld>>,
+    others: Query<(&Transform, &Remote), Without<Me>>,
+    mut log: ResMut<crate::state::ChatLog>,
 ) {
     let Ok((mut t, mut me)) = me.single_mut() else { return };
     // digitando no chat ou num campo: as teclas não movem o avatar
@@ -84,6 +129,41 @@ fn walk(
         me.moving = false;
         return;
     }
+    let dt = time.delta_secs();
+    // F senta no assento livre mais perto (até 1,5 m) ou levanta, um passo para trás; E pula
+    if keys.just_pressed(KeyCode::KeyF) {
+        if let Some(seat) = me.seat.take() {
+            let p = clamp_walk(Vec2::new(t.translation.x - seat.r.sin() * 0.8, t.translation.z - seat.r.cos() * 0.8));
+            t.translation.x = p.x;
+            t.translation.z = p.y;
+        } else if let Some(world) = &world {
+            let here = Vec2::new(t.translation.x, t.translation.z);
+            let taken = |s: &SeatPose| {
+                others.iter().any(|(o, r)| r.sitting && (o.translation.x - s.x).hypot(o.translation.z - s.z) < 0.4)
+            };
+            let free: Vec<SeatPose> = seats(world).into_iter().filter(|s| !taken(s)).collect();
+            match seat_near(&free, here.x, here.y, 1.5) {
+                Some(s) => {
+                    t.translation = Vec3::new(s.x, 0.0, s.z);
+                    t.rotation = Quat::from_rotation_y(s.r);
+                    me.seat = Some(s);
+                    me.jy = 0.0;
+                    me.vy = 0.0;
+                }
+                None => log.push("", "Chegue perto de uma cadeira para sentar.", true),
+            }
+        }
+    }
+    if keys.just_pressed(KeyCode::KeyE) && me.seat.is_none() && me.jy == 0.0 {
+        me.vy = 4.3;
+    }
+    me.jy += me.vy * dt;
+    me.vy -= 12.0 * dt;
+    if me.jy <= 0.0 {
+        me.jy = 0.0;
+        me.vy = 0.0;
+    }
+    t.translation.y = me.jy;
     let k = |a: KeyCode, b: KeyCode| keys.pressed(a) || keys.pressed(b);
     let mut mv = Vec2::new(
         f32::from(u8::from(k(KeyCode::KeyD, KeyCode::ArrowRight)))
@@ -96,6 +176,10 @@ fn walk(
         mv = Vec2::new(mv.x * c + mv.y * s, -mv.x * s + mv.y * c);
     }
     me.moving = false;
+    if mv.length_squared() > 0.0 && me.seat.is_some() {
+        // andar levanta
+        me.seat = None;
+    }
     if mv.length_squared() > 0.0 {
         let d = mv.normalize();
         let before = Vec2::new(t.translation.x, t.translation.z);
@@ -109,7 +193,8 @@ fn walk(
 
 /// Câmera do jogo: 9,2 m atrás e 4,8 m acima, olhando 3 m à frente do avatar, com suavização exponencial.
 fn follow_camera(
-    keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    motion: Res<bevy::input::mouse::AccumulatedMouseMotion>,
     time: Res<Time>,
     mut ctl: ResMut<Controls>,
     me: Query<&Transform, (With<Me>, Without<Camera3d>)>,
@@ -121,11 +206,32 @@ fn follow_camera(
     }
     let (Ok(me), Ok(mut cam)) = (me.single(), cam.single_mut()) else { return };
     let dt = time.delta_secs();
-    if keys.pressed(KeyCode::KeyQ) {
-        ctl.cam_yaw += 1.8 * dt;
+    // botão direito: arrastar gira a câmera (camYaw −= dx·0,008); clique sem arrastar alterna entre a câmera padrão e a
+    // de frente para o avatar, como no cliente web
+    if mouse.just_pressed(MouseButton::Right) {
+        ctl.orbit = Some((0.0, false));
     }
-    if keys.pressed(KeyCode::KeyE) {
-        ctl.cam_yaw -= 1.8 * dt;
+    if let Some((dist, moved)) = ctl.orbit.as_mut() {
+        *dist += motion.delta.length();
+        if *dist > 5.0 {
+            *moved = true;
+        }
+        if *moved {
+            ctl.cam_yaw -= motion.delta.x * 0.008;
+        }
+    }
+    if mouse.just_released(MouseButton::Right)
+        && let Some((_, moved)) = ctl.orbit.take()
+        && !moved
+    {
+        let face = me.rotation.to_euler(EulerRot::YXZ).0;
+        let ad =
+            |a: f32, b: f32| (a - b + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        ctl.cam_yaw = if ad(face, ctl.cam_yaw_smooth).abs() < 0.35 {
+            ctl.cam_yaw_smooth + ad(0.0, ctl.cam_yaw_smooth)
+        } else {
+            ctl.cam_yaw_smooth + ad(face, ctl.cam_yaw_smooth)
+        };
     }
     let diff = (ctl.cam_yaw - ctl.cam_yaw_smooth + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
         - std::f32::consts::PI;

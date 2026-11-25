@@ -256,22 +256,23 @@ fn receive(
 }
 
 /// Envia a posição a cada 100 ms quando muda (ou a cada 2 s), como o cliente web.
-fn send_moves(time: Res<Time<Real>>, net: Option<ResMut<Net>>, me: Query<&Transform, With<Me>>) {
-    let (Some(mut net), Ok(t)) = (net, me.single()) else { return };
+fn send_moves(time: Res<Time<Real>>, net: Option<ResMut<Net>>, me: Query<(&Transform, &Me)>) {
+    let (Some(mut net), Ok((t, me))) = (net, me.single()) else { return };
+    let sit = u8::from(me.seat.is_some());
     let now = time.elapsed_secs_f64();
     if now - net.send_t < 0.1 {
         return;
     }
     net.send_t = now;
     let ry = t.rotation.to_euler(EulerRot::YXZ).0;
-    let key = format!("{:.2},{:.2},{:.2},{:.2}0", t.translation.x, t.translation.z, ry, t.translation.y);
+    let key = format!("{:.2},{:.2},{:.2},{:.2}{sit}", t.translation.x, t.translation.z, ry, t.translation.y);
     let due = match &net.last_sent {
         Some((k, at)) => *k != key || now - at > 2.0,
         None => true,
     };
     if due {
         if let Ok(h) = net.h.lock() {
-            h.send(&ClientMsg::Move { x: t.translation.x, z: t.translation.z, ry, y: t.translation.y, s: 0 });
+            h.send(&ClientMsg::Move { x: t.translation.x, z: t.translation.z, ry, y: t.translation.y, s: sit });
         }
         net.last_sent = Some((key, now));
     }
