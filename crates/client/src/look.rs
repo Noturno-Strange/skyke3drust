@@ -38,6 +38,8 @@ impl Plugin for LookPlugin {
 pub struct AvatarKit {
     pub palettes: Palettes,
     pub reference: Cfg,
+    /// Altura do corpo acima dos pés no avatar de referência (`userData.fy`).
+    pub fy: f32,
     hair_dir: std::path::PathBuf,
     shapes: std::sync::Mutex<HashMap<String, Option<Arc<HairShape>>>>,
 }
@@ -52,14 +54,17 @@ impl AvatarKit {
         #[derive(serde::Deserialize)]
         struct Def {
             cfg: BTreeMap<String, serde_json::Value>,
+            #[serde(default)]
+            fy: Option<f32>,
         }
         let p = assets.join("avatars/default.json");
         let d: Def = serde_json::from_slice(&std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?)
             .map_err(|e| e.to_string())?;
+        let fy = d.fy.unwrap_or(0.247);
         let raw: BTreeMap<String, u32> =
             d.cfg.into_iter().filter_map(|(k, v)| v.as_u64().map(|n| (k, n as u32))).collect();
         let reference = palettes.clean(&raw).ok_or("visual de referência inválido")?;
-        Ok(Self { palettes, reference, hair_dir: assets.join("avatars/hair"), shapes: Default::default() })
+        Ok(Self { palettes, reference, fy, hair_dir: assets.join("avatars/hair"), shapes: Default::default() })
     }
 
     /// Geometria de um estilo de cabelo (`hs-NN`) ou chapéu (`hat-N`), lida do disco uma vez.

@@ -64,6 +64,10 @@ impl ChatLog {
     }
 }
 
+/// Gesto que o jogador quer fazer (`stop` para).
+#[derive(Message, Debug, Clone)]
+pub struct SendGesture(pub String);
+
 /// Mensagem de chat que o jogador quer enviar.
 #[derive(Message, Debug, Clone)]
 pub struct SendChat(pub String);

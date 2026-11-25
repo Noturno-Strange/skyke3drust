@@ -1,12 +1,14 @@
 //! Interface dentro da sala: código da sala e lotação (canto superior), chat da sala (canto inferior esquerdo, 380×210
 //! como `#chat` no original) e o nome sobre cada avatar (`.lbl`).
 
+use crate::gestures::{Gesture, GestureCatalog};
 use crate::menu::despawn;
-use crate::state::{ActorName, ChatLog, Screen, SendChat, Session};
+use crate::player::Me;
+use crate::state::{ActorName, ChatLog, Screen, SendChat, SendGesture, Session};
 use bevy::input_focus::{FocusCause, InputFocus};
 use bevy::prelude::*;
 use bevy::text::EditableText;
-use sky_ui::{Theme, UiFonts, input_value, panel, text_input};
+use sky_ui::{Activate, Theme, UiFonts, button, input_value, panel, text_input};
 
 #[derive(Debug)]
 pub struct HudPlugin;
@@ -17,13 +19,17 @@ impl Plugin for HudPlugin {
             .add_systems(OnExit(Screen::Playing), (despawn::<HudRoot>, despawn::<NameTag>))
             .add_systems(
                 Update,
-                (chat_keys, refresh_log, refresh_room, spawn_tags, place_tags).run_if(in_state(Screen::Playing)),
+                (chat_keys, refresh_log, refresh_room, spawn_tags, place_tags, stop_gesture_on_walk)
+                    .run_if(in_state(Screen::Playing)),
             );
     }
 }
 
 #[derive(Component)]
 struct HudRoot;
+/// Painel de gestos (aberto e fechado pelo botão 🎭 da barra).
+#[derive(Component)]
+struct GesturePanel;
 #[derive(Component)]
 struct ChatLogText;
 #[derive(Component)]
@@ -36,7 +42,14 @@ struct NameTag(Entity);
 #[derive(Component)]
 struct HasTag;
 
-fn spawn_hud(mut commands: Commands, t: Res<Theme>, f: Res<UiFonts>, s: Res<Session>, mut log: ResMut<ChatLog>) {
+fn spawn_hud(
+    mut commands: Commands,
+    t: Res<Theme>,
+    f: Res<UiFonts>,
+    s: Res<Session>,
+    mut log: ResMut<ChatLog>,
+    gcat: Res<GestureCatalog>,
+) {
     let root = commands
         .spawn((
             HudRoot,
@@ -97,6 +110,63 @@ fn spawn_hud(mut commands: Commands, t: Res<Theme>, f: Res<UiFonts>, s: Res<Sess
     let input = commands.spawn((text_input(&t, &f, "", Val::Percent(100.0)), ChatInput)).id();
     commands.entity(chat).add_children(&[title, logbox, input]);
     commands.entity(root).add_children(&[room, chat]);
+
+    // barra de baixo (`#bar`): por enquanto o botão de gestos
+    let bar = commands
+        .spawn(Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(12.0),
+            left: Val::Percent(50.0),
+            margin: UiRect::left(Val::Px(-30.0)),
+            column_gap: Val::Px(8.0),
+            ..default()
+        })
+        .id();
+    let gb = button(&mut commands, &t, &f, "🎭", false);
+    commands.entity(gb).observe(|_: On<Activate>, mut q: Query<&mut Node, With<GesturePanel>>| {
+        for mut n in &mut q {
+            n.display = if n.display == Display::None { Display::Flex } else { Display::None };
+        }
+    });
+    commands.entity(bar).add_child(gb);
+    // painel de gestos: os 30 do catálogo, com ícone e nome
+    let gp = commands
+        .spawn(panel(&t))
+        .insert((
+            GesturePanel,
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(64.0),
+                left: Val::Percent(50.0),
+                margin: UiRect::left(Val::Px(-260.0)),
+                width: Val::Px(520.0),
+                padding: UiRect::all(Val::Px(10.0)),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(12.0)),
+                flex_wrap: FlexWrap::Wrap,
+                column_gap: Val::Px(6.0),
+                row_gap: Val::Px(6.0),
+                display: Display::None,
+                ..default()
+            },
+        ))
+        .id();
+    for g in &gcat.list {
+        let b = button(&mut commands, &t, &f, &format!("{} {}", g.ic, g.n), false);
+        let id = g.id.clone();
+        commands.entity(b).observe(
+            move |_: On<Activate>,
+                  mut send: MessageWriter<SendGesture>,
+                  mut q: Query<&mut Node, With<GesturePanel>>| {
+                send.write(SendGesture(id.clone()));
+                for mut n in &mut q {
+                    n.display = Display::None;
+                }
+            },
+        );
+        commands.entity(gp).add_child(b);
+    }
+    commands.entity(root).add_children(&[bar, gp]);
 
     if s.online {
         log.push("", "Você entrou na sala. Enter abre o chat; Esc volta para o jogo.", true);
@@ -229,5 +299,15 @@ fn place_tags(
             }
             Err(_) => *vis = Visibility::Hidden,
         }
+    }
+}
+
+/// Andar para o gesto (como no original, que envia `stop`).
+fn stop_gesture_on_walk(me: Query<(&Me, Has<Gesture>)>, mut send: MessageWriter<SendGesture>) {
+    if let Ok((me, has)) = me.single()
+        && me.moving
+        && has
+    {
+        send.write(SendGesture("stop".into()));
     }
 }

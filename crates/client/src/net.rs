@@ -1,8 +1,9 @@
 //! Rede no cliente: conecta ao servidor (Node.js atual) numa thread Tokio e traz os eventos para o laço do Bevy.
 
+use crate::gestures::{Gesture, GestureCatalog};
 use crate::look::{AvatarKit, AvatarLook};
 use crate::player::{Me, Remote, avatar_scene};
-use crate::state::{ActorName, ChatLog, ConnectError, ConnectRequest, Screen, SendChat, Session};
+use crate::state::{ActorName, ChatLog, ConnectError, ConnectRequest, Screen, SendChat, SendGesture, Session};
 use bevy::prelude::*;
 use sky_networking::{ConnectConfig, Enter, NetEvent, NetHandle};
 use sky_protocol::{ClientMsg, PlayerPub, ServerMsg};
@@ -16,7 +17,7 @@ pub struct NetPlugin;
 
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (start, finish_connect, receive, send_moves, send_chat))
+        app.add_systems(Update, (start, finish_connect, receive, send_moves, send_chat, send_gesture))
             .add_systems(OnExit(Screen::Playing), leave);
     }
 }
@@ -165,6 +166,8 @@ fn receive(
     mut err: ResMut<ConnectError>,
     kit: Option<Res<AvatarKit>>,
     mut looks: Query<&mut AvatarLook>,
+    gcat: Res<GestureCatalog>,
+    gests: Query<&Gesture>,
 ) {
     let Some(mut net) = net else { return };
     let now = time.elapsed_secs_f64() * 1000.0;
@@ -208,6 +211,18 @@ fn receive(
                 }
             }
             NetEvent::Server(ServerMsg::Cap { max }) => session.max = max,
+            NetEvent::Server(ServerMsg::Gest { id, g }) => {
+                if let Some(&ent) = net.actors.get(&id) {
+                    // como startGest: "stop" para; outro gesto só depois de 1 s do anterior
+                    if g == "stop" {
+                        commands.entity(ent).remove::<Gesture>();
+                    } else if let Some(dur) = gcat.duration(&g)
+                        && gests.get(ent).map_or(true, |cur| cur.e > 1.0)
+                    {
+                        commands.entity(ent).insert(Gesture { id: g, e: 0.0, dur });
+                    }
+                }
+            }
             NetEvent::Server(ServerMsg::Cfg { id, cfg }) => {
                 if let (Some(&ent), Some(kit)) = (net.actors.get(&id), kit.as_deref())
                     && let Some(c) = kit.palettes.clean(&cfg)
@@ -287,4 +302,29 @@ fn leave(mut commands: Commands, net: Option<Res<Net>>, mut s: ResMut<Session>) 
         commands.remove_resource::<Net>();
     }
     *s = Session::default();
+}
+
+/// Gesto do jogador local: aplica aqui (o servidor só repassa para os outros) e envia.
+fn send_gesture(
+    mut commands: Commands,
+    mut msgs: MessageReader<SendGesture>,
+    net: Option<Res<Net>>,
+    me: Query<Entity, With<Me>>,
+    gcat: Res<GestureCatalog>,
+) {
+    for SendGesture(g) in msgs.read() {
+        let Ok(e) = me.single() else { continue };
+        if g == "stop" {
+            commands.entity(e).remove::<Gesture>();
+        } else if let Some(dur) = gcat.duration(g) {
+            commands.entity(e).insert(Gesture { id: g.clone(), e: 0.0, dur });
+        } else {
+            continue;
+        }
+        if let Some(net) = &net
+            && let Ok(h) = net.h.lock()
+        {
+            h.send(&ClientMsg::Gest { g: g.clone() });
+        }
+    }
 }

@@ -9,7 +9,9 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+mod anim;
 mod args;
+mod gestures;
 mod hud;
 mod look;
 mod menu;
@@ -22,7 +24,7 @@ use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use sky_world::{LoadWorld, WorldPlugin};
-use state::{ChatLog, ConnectError, ConnectRequest, Screen, SendChat, Session};
+use state::{ChatLog, ConnectError, ConnectRequest, Screen, SendChat, SendGesture, Session};
 
 fn main() {
     let a = match args::Args::parse(std::env::args().skip(1)) {
@@ -52,6 +54,7 @@ fn main() {
     .init_resource::<ConnectError>()
     .add_message::<ConnectRequest>()
     .add_message::<SendChat>()
+    .add_message::<SendGesture>()
     .add_plugins((WorldPlugin { assets_dir: assets.clone() }, sky_ui::SkyUiPlugin))
     .add_plugins((
         look::LookPlugin { assets_dir: assets.clone() },
@@ -59,8 +62,11 @@ fn main() {
         net::NetPlugin,
         hud::HudPlugin,
     ))
+    .add_plugins((anim::AnimPlugin, gestures::GesturePlugin))
+    .insert_resource(load_gestures(&assets))
     .insert_resource(a.clone())
-    .add_systems(Startup, setup);
+    .add_systems(Startup, setup)
+    .add_systems(OnEnter(Screen::Playing), start_gesture);
     if let Some(shot) = &a.shot {
         app.add_plugins(shot::ShotPlugin { name: shot.clone(), out: a.out.clone() });
     } else {
@@ -103,5 +109,19 @@ fn setup(
     } else if a.explore {
         load.write(LoadWorld(a.world));
         next.set(Screen::Playing);
+    }
+}
+
+fn load_gestures(assets: &std::path::Path) -> gestures::GestureCatalog {
+    let p = assets.join("../data/catalogs/catalog.json");
+    std::fs::read(&p).ok().and_then(|b| gestures::GestureCatalog::from_catalog_json(&b).ok()).unwrap_or_else(|| {
+        error!("gestos: catálogo não encontrado em {}", p.display());
+        gestures::GestureCatalog::default()
+    })
+}
+
+fn start_gesture(a: Res<args::Args>, mut send: MessageWriter<SendGesture>) {
+    if let Some(g) = &a.gesture {
+        send.write(SendGesture(g.clone()));
     }
 }

@@ -17,7 +17,7 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Controls>().add_systems(Startup, spawn_me).add_systems(
             Update,
-            (walk.run_if(in_state(crate::state::Screen::Playing)), follow_camera, interpolate).chain(),
+            (walk.run_if(in_state(crate::state::Screen::Playing)), follow_camera, interpolate_system).chain(),
         );
     }
 }
@@ -141,7 +141,7 @@ fn follow_camera(
 }
 
 /// Desenha cada ator ~230 ms no passado, entre dois pacotes (como `snapPos` no cliente web).
-fn interpolate(time: Res<Time<Real>>, mut q: Query<(&mut Transform, &Remote)>) {
+pub fn interpolate_system(time: Res<Time<Real>>, mut q: Query<(&mut Transform, &Remote)>) {
     let rt = time.elapsed_secs_f64() * 1000.0 - INTERP_MS;
     for (mut t, r) in &mut q {
         let s = &r.snaps;

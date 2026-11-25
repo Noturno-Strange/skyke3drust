@@ -5,7 +5,7 @@ use sky_shared::World;
 use std::path::PathBuf;
 
 pub const USAGE: &str = "uso: skyke3d [--world MUNDO] [--explore] [--server URL --name NOME [--join CODIGO | --bots N]] \
-[--shot jogo|alto --out ARQUIVO.png] [--capture SEGUNDOS --out ARQUIVO.png] [--assets PASTA]\n\
+[--shot jogo|alto --out ARQUIVO.png] [--capture SEGUNDOS --out ARQUIVO.png] [--gesture ID] [--assets PASTA]\n\
 mundos: amazora, cerron, atlanthia, caatara, panthara, pamphora";
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -22,6 +22,8 @@ pub struct Args {
     pub explore: bool,
     /// Captura a janela inteira (com a interface) depois de N segundos e fecha.
     pub capture: Option<f32>,
+    /// Gesto ao entrar (para capturas e testes).
+    pub gesture: Option<String>,
 }
 
 impl Args {
@@ -39,6 +41,7 @@ impl Args {
                 "--out" => a.out = val()?.into(),
                 "--assets" => a.assets = Some(val()?.into()),
                 "--explore" => a.explore = true,
+                "--gesture" => a.gesture = Some(val()?),
                 "--capture" => a.capture = Some(val()?.parse().map_err(|_| "--capture precisa de segundos")?),
                 "-h" | "--help" => return Err(String::new()),
                 _ => return Err(format!("argumento desconhecido: {k}")),

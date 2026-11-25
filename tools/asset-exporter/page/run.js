@@ -277,10 +277,12 @@ async function main() {
       rot = g.rotation.y;
     g.position.set(0, 0, 0);
     g.rotation.y = 0;
+    // juntas com nome: o cliente nativo anima andar, sentar, gestos e danças por elas (animA em app-ui.js)
+    for (const k of ['fig', 'armL', 'armR', 'hold', 'hd', 'lgL', 'lgR', 'knL', 'knR', 'ftL', 'ftR']) if (g.userData[k]) g.userData[k].name = k;
     g.updateMatrixWorld(true);
     annotate(g);
     await send('avatar/default.glb', await glb(g), 'model/gltf-binary');
-    await send('avatar/default.json', JSON.stringify({ v: 1, cfg: { ...cfg } }, null, 1), 'application/json');
+    await send('avatar/default.json', JSON.stringify({ v: 1, cfg: { ...cfg }, fy: g.userData.fy || 0 }, null, 1), 'application/json');
     g.position.copy(pos);
     g.rotation.y = rot;
   }
