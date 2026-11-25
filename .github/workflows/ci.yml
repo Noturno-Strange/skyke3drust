@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# um push novo cancela a execução anterior do mesmo ramo (o build do Bevy leva de 25 a 45 minutos)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
