@@ -229,7 +229,10 @@ fn apply_looks(
             head_meshes.push(*h);
             head_meshes.extend(children.iter_descendants(*h));
         }
-        let face = head::head_texture(&kit.palettes, &look.0, 0);
+        // o canvas do original sobe com `flipY` (linha 0 em v = 1, o topo da cabeça) e as UVs da esfera exportada
+        // seguem essa convenção; no wgpu a linha 0 fica em v = 0, então as linhas vão invertidas
+        let face: Vec<u8> =
+            head::head_texture(&kit.palettes, &look.0, 0).chunks_exact(head::FW * 4).rev().flatten().copied().collect();
         let img = images.add(Image::new(
             Extent3d { width: head::FW as u32, height: head::FH as u32, depth_or_array_layers: 1 },
             TextureDimension::D2,
