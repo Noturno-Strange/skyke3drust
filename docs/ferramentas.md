@@ -68,3 +68,7 @@ ingredientes, 182 receitas, 100 plantas, fazenda, gestos, emojis, remédios), se
 O exportador também grava `avatar/ref-head/` (texturas de cabeça geradas pelo próprio `headMat` do jogo para 16
 visuais) e `cases.json`. O teste `matches_browser_reference` de `sky-avatars` exige que o port em Rust dê o mesmo
 resultado; hoje é idêntico pixel a pixel.
+
+E `avatar/hair/`: a geometria dos 34 cabelos (`hs-NN.bin`) e dos 3 chapéus (`hat-N.bin`), que só depende do estilo,
+e as cores que o `paintHair` do jogo gera para 11 visuais (`paint-NN.bin` + `cases.json`), conferidas pelo teste
+`paint_matches_browser`.

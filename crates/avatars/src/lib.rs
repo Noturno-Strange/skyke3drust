@@ -4,11 +4,13 @@
 //! esculpido por campo de distância, chapéus e uma textura de rosto calculada por pixel. Este crate porta essa geração
 //! para Rust, parte por parte, e cada parte é conferida contra o que o navegador gera com o mesmo visual (`cfg`).
 //!
-//! Portado: paletas e validação do `cfg` ([`cfg`]), textura da cabeça ([`head`]).
+//! Portado: paletas e validação do `cfg` ([`cfg`]), textura da cabeça ([`head`]), cores do cabelo e dos chapéus
+//! sobre a geometria exportada ([`hair`]).
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod cfg;
+pub mod hair;
 pub mod head;
 
 pub use cfg::{Cfg, Palette, Palettes};

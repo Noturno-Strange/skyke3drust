@@ -89,6 +89,10 @@ function annotate(root) {
       if (o.castShadow) ud.cs = 1;
       if (o.receiveShadow) ud.rs = 1;
     }
+    // partes do avatar que o cliente nativo troca pelo visual de cada jogador
+    if (o.isMesh && typeof HM !== 'undefined' && HM && o.material === HM) ud.part = 'hair';
+    if (o.isMesh && typeof HTM !== 'undefined' && HTM && o.material === HTM) ud.part = 'hat';
+    if (o.isMesh && typeof HOL !== 'undefined' && [...HOL.values()].includes(o.material)) ud.part = 'hair-outline';
     if (o.isInstancedMesh) ud.instanced = o.count;
     if (o.isPoints) ud.points = true;
     if (o.isSprite) ud.sprite = true;
@@ -279,6 +283,62 @@ async function main() {
     await send('avatar/default.json', JSON.stringify({ v: 1, cfg: { ...cfg } }, null, 1), 'application/json');
     g.position.copy(pos);
     g.rotation.y = rot;
+  }
+  // Geometria do cabelo (34 estilos) e dos chapéus: depende só do estilo; a cor é aplicada depois por triângulo
+  // (paintHair). Binário: 'SKYH', versão, nTri, nTriLo, depois em f32: pos[9n], normal[9n], centro[3n], jitter[n],
+  // pos_lo[9m], onrm_lo[9m]. O cliente nativo pinta com o port de col0/paintHair (crates/avatars/src/hair.rs).
+  if (typeof hairGeo === 'function') {
+    const pack = (shape, lo, normalAttr) => {
+      const A = shape.g.attributes,
+        n = shape.JT.length,
+        m = lo.g.attributes.position.count / 3,
+        head = new Uint32Array([0x48594b53, 1, n, m]),
+        parts = [A.position.array, A[normalAttr].array, shape.CE, shape.JT, lo.g.attributes.position.array, lo.g.attributes.onrm.array];
+      return new Blob([head, ...parts.map(a => new Float32Array(a))], { type: 'application/octet-stream' });
+    };
+    const base = { hair: 0, skin: 0, rb: 0, tb: 0, hc: 0, hb: 0 };
+    for (let hs = 0; hs < HS.length; hs++) {
+      LINS++;
+      try {
+        const sh = hairGeo({ ...base, hs });
+        await send('avatar/hair/hs-' + String(hs).padStart(2, '0') + '.bin', pack(sh.shape, sh.mkLo(), 'normal'), 'application/octet-stream');
+      } finally {
+        LINS--;
+      }
+    }
+    for (let h = 1; h < HATS.length; h++) {
+      LINS++;
+      try {
+        const sh = hatGeo(h);
+        sh.shape.JT.fill(1);
+        await send('avatar/hair/hat-' + h + '.bin', pack(sh.shape, sh.mkLo(), 'snrm'), 'application/octet-stream');
+      } finally {
+        LINS--;
+      }
+    }
+    // cores de referência: paintHair do jogo para alguns visuais (o port em Rust tem de dar o mesmo)
+    const P = [
+      [{ hs: 0, hair: 3 }], [{ hs: 3, hair: 7, skin: 4 }], [{ hs: 7, hair: 12, rb: 1, skin: 9 }], [{ hs: 20, hair: 5 }],
+      [{ hs: 24, hair: 1, skin: 12, tb: 1 }], [{ hs: 25, hair: 20 }], [{ hs: 31, hair: 8, skin: 2 }], [{ hs: 33, hair: 30, rb: 1 }],
+      [{ hat: 1, hc: 6 }], [{ hat: 2, hc: 13, hb: 1 }], [{ hat: 3, hc: 25 }]
+    ];
+    const cases = [];
+    for (let i = 0; i < P.length; i++) {
+      const c = { ...base, ...P[i][0] };
+      LINS++;
+      try {
+        const sh = c.hat ? hatGeo(c.hat) : hairGeo(c);
+        if (c.hat) sh.shape.JT.fill(1);
+        sh.setC(c);
+        const K = paintHair(sh.shape, sh.col);
+        const name = 'paint-' + String(i).padStart(2, '0') + '.bin';
+        await send('avatar/hair/' + name, new Blob([K], { type: 'application/octet-stream' }), 'application/octet-stream');
+        cases.push([name, c]);
+      } finally {
+        LINS--;
+      }
+    }
+    await send('avatar/hair/cases.json', JSON.stringify(cases), 'application/json');
   }
   // Texturas de cabeça geradas pelo próprio headMat do jogo, para conferir o port em Rust (crates/avatars/src/head.rs).
   if (typeof headMat === 'function') {

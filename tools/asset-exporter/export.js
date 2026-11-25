@@ -60,7 +60,7 @@ const TYPES = {
   '.woff2': 'font/woff2',
   '.webmanifest': 'application/manifest+json'
 };
-const SAFE_NAME = /^([a-z]+\/(scene\.glb|sky\.glb|world\.json|ref-[a-z]+\.png|sprite-[0-9]{1,3}\.png)|avatar\/default\.(glb|json)|avatar\/ref-head\/(head-[0-9]{2}\.png|cases\.json))$/;
+const SAFE_NAME = /^([a-z]+\/(scene\.glb|sky\.glb|world\.json|ref-[a-z]+\.png|sprite-[0-9]{1,3}\.png)|avatar\/default\.(glb|json)|avatar\/ref-head\/(head-[0-9]{2}\.png|cases\.json)|avatar\/hair\/(hs-[0-9]{2}\.bin|hat-[0-9]\.bin|paint-[0-9]{2}\.bin|cases\.json))$/;
 
 function inside(root, p) {
   const full = path.resolve(root, '.' + path.posix.normalize('/' + p));

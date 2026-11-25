@@ -7,11 +7,15 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::gltf::GltfExtras;
 use bevy::mesh::VertexAttributeValues;
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use sky_avatars::hair::{HairShape, paint};
 use sky_avatars::{Cfg, Palette, Palettes, head};
-use sky_rendering::ToonMaterial;
-use std::collections::BTreeMap;
+use sky_rendering::{Kind, MaterialDesc, Ramp, ToonMaterial};
+use sky_world::CurrentWorld;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct LookPlugin {
@@ -34,6 +38,8 @@ impl Plugin for LookPlugin {
 pub struct AvatarKit {
     pub palettes: Palettes,
     pub reference: Cfg,
+    hair_dir: std::path::PathBuf,
+    shapes: std::sync::Mutex<HashMap<String, Option<Arc<HairShape>>>>,
 }
 
 impl AvatarKit {
@@ -53,7 +59,28 @@ impl AvatarKit {
         let raw: BTreeMap<String, u32> =
             d.cfg.into_iter().filter_map(|(k, v)| v.as_u64().map(|n| (k, n as u32))).collect();
         let reference = palettes.clean(&raw).ok_or("visual de referência inválido")?;
-        Ok(Self { palettes, reference })
+        Ok(Self { palettes, reference, hair_dir: assets.join("avatars/hair"), shapes: Default::default() })
+    }
+
+    /// Geometria de um estilo de cabelo (`hs-NN`) ou chapéu (`hat-N`), lida do disco uma vez.
+    fn shape(&self, name: &str) -> Option<Arc<HairShape>> {
+        let mut cache = self.shapes.lock().ok()?;
+        cache
+            .entry(name.to_owned())
+            .or_insert_with(|| {
+                let p = self.hair_dir.join(format!("{name}.bin"));
+                match std::fs::read(&p)
+                    .map_err(|e| e.to_string())
+                    .and_then(|b| HairShape::parse(&b).map_err(|e| e.to_string()))
+                {
+                    Ok(s) => Some(Arc::new(s)),
+                    Err(e) => {
+                        error!("{}: {e}", p.display());
+                        None
+                    }
+                }
+            })
+            .clone()
     }
 
     /// Visual como mapa, para enviar ao servidor.
@@ -73,6 +100,47 @@ struct LookApplied(Cfg);
 /// Malha original (antes de trocar as cores), para refazer a troca a partir dela.
 #[derive(Component, Debug, Clone)]
 struct OriginalMesh(Handle<Mesh>);
+
+/// Cabelo, chapéu e contorno gerados para o visual (refeitos quando ele muda).
+#[derive(Component, Debug)]
+struct HairPart;
+
+fn tri_mesh(pos: &[f32], nrm: &[f32], colors: Option<&[f32]>) -> Mesh {
+    let v3 = |a: &[f32]| a.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect::<Vec<[f32; 3]>>();
+    let n = pos.len() / 3;
+    let mut m = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, v3(pos))
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, v3(nrm));
+    if let Some(c) = colors {
+        m.insert_attribute(
+            Mesh::ATTRIBUTE_COLOR,
+            c.chunks_exact(3).map(|c| [c[0], c[1], c[2], 1.0]).collect::<Vec<[f32; 4]>>(),
+        );
+    }
+    m.insert_indices(Indices::U32((0..n as u32).collect()));
+    m
+}
+
+fn desc(kind: Kind, flat: bool, double: bool, vertex_colors: bool) -> MaterialDesc {
+    MaterialDesc {
+        kind,
+        color: LinearRgba::WHITE,
+        emissive: LinearRgba::BLACK,
+        texture: None,
+        uv_scale: Vec2::ONE,
+        uv_offset: Vec2::ZERO,
+        flat,
+        double_sided: double,
+        back_side: false,
+        transparent: false,
+        alpha_cutoff: None,
+        depth_write: true,
+        fog: true,
+        vertex_colors,
+        ground_avg: None,
+        additive: false,
+    }
+}
 
 /// Material original (antes do rosto ou da cor do visual).
 #[derive(Component, Debug, Clone)]
@@ -114,7 +182,11 @@ fn apply_looks(
     mut meshes: ResMut<Assets<Mesh>>,
     mut mats: ResMut<Assets<ToonMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    parents: Query<&ChildOf>,
+    old_parts: Query<Entity, With<HairPart>>,
+    world: Option<Res<CurrentWorld>>,
 ) {
+    let Some(world) = world else { return };
     for (e, look, applied) in &looks {
         if applied.is_some_and(|a| a.0 == look.0) {
             continue;
@@ -197,6 +269,44 @@ fn apply_looks(
                 ec.insert(OriginalMesh(src));
             }
             ec.insert(Mesh3d(meshes.add(mesh)));
+        }
+        // cabelo ou chapéu do visual, no grupo da cabeça (o pai do nó da cabeça), no lugar dos do avatar de referência
+        for c in &all {
+            if extras.get(*c).is_ok_and(|x| x.value.contains("\"part\":\"hair") || x.value.contains("\"part\":\"hat\""))
+            {
+                commands.entity(*c).insert(Visibility::Hidden);
+            }
+            if old_parts.contains(*c) {
+                commands.entity(*c).despawn();
+            }
+        }
+        if let Some(hd) = head_nodes.first().and_then(|h| parents.get(*h).ok()).map(ChildOf::parent) {
+            let hat = look.0.get("hat");
+            let (name, w, flat, double) = if hat > 0 {
+                (format!("hat-{hat}"), 0.011, false, false)
+            } else {
+                (format!("hs-{:02}", look.0.get("hs")), 0.034, true, true)
+            };
+            if let Some(shape) = kit.shape(&name) {
+                let colors = paint(&shape, &kit.palettes, &look.0);
+                let mesh = meshes.add(tri_mesh(&shape.positions, &shape.normals, Some(&colors)));
+                let mat =
+                    mats.add(ToonMaterial::new(&desc(Kind::Toon(Ramp::Avatar), flat, double, true), &world.lighting));
+                let ol_pos: Vec<f32> =
+                    shape.lo_positions.iter().zip(&shape.lo_offsets).map(|(p, o)| p + o * w as f32).collect();
+                let ol_mesh = meshes.add(tri_mesh(&ol_pos, &shape.lo_offsets, None));
+                let ol_mat = mats.add(ToonMaterial::new(&desc(Kind::Outline, false, false, false), &world.lighting));
+                commands.entity(hd).with_children(|p| {
+                    p.spawn((HairPart, Mesh3d(mesh), MeshMaterial3d(mat), Transform::IDENTITY));
+                    p.spawn((
+                        HairPart,
+                        Mesh3d(ol_mesh),
+                        MeshMaterial3d(ol_mat),
+                        Transform::IDENTITY,
+                        bevy::light::NotShadowCaster,
+                    ));
+                });
+            }
         }
         commands.entity(e).insert(LookApplied(look.0.clone()));
     }

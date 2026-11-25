@@ -12,7 +12,7 @@ sem teste funcional; a coluna "Validação" diz como cada item foi conferido.
 | 3 | Ferramentas de exportação dos recursos gráficos | feito: `tools/asset-exporter` (6 mundos, céu, sprites, avatar de referência, metadados, capturas) |
 | 4 | Protótipo Bevy com um cenário original | feito: os 6 mundos abrem no cliente nativo com os modelos originais |
 | 5 | Materiais, iluminação e shaders toon | feito: toon, contorno, domo do céu, chão, neblina, sprites e sombras; ajustes finos na lista abaixo |
-| 6 | Avatares, personalização e animações | em andamento: rosto/cabeça portados (idênticos ao navegador, pixel a pixel, em 16 casos) e cores de pele, roupa e calçado por jogador; faltam cabelo, chapéus, bermuda/bota, brilho, editor e animações |
+| 6 | Avatares, personalização e animações | em andamento: rosto e cabeça portados (idênticos ao navegador, pixel a pixel, em 16 casos), cores de pele, roupa e calçado, 34 cabelos e 3 chapéus (geometria exportada; cores portadas e iguais às do navegador até o último bit de f32); faltam bermuda/bota, brilho, editor e animações |
 | 7 | Interface original | em andamento: tela inicial (nome, mundo, bots, servidor, criar, entrar, explorar), código da sala e lotação, chat da sala e nomes sobre os avatares, com as cores e a fonte do original; faltam a barra de botões e os painéis |
 | 8 | Compatibilidade com o servidor existente | núcleo feito: ticket, identidade, entrar/criar sala, posições, eventos de sala |
 | 9 | Gameplay e Rhai | sandbox Rhai pronta; sistemas de gameplay pendentes |
@@ -70,14 +70,15 @@ Para reproduzir: ver [ferramentas.md](ferramentas.md).
 * **Código de recuperação**: o cliente nativo ainda não exibe o código de recuperação. Uma identidade criada por ele
   só existe naquele computador; se o arquivo for perdido, a conta também é. Até a tela de recuperação ser migrada,
   use o cliente nativo para testes.
-* Cada jogador aparece com o próprio rosto, pele, olhos, camisa, calça e calçado (`cfg`), mas o formato do cabelo,
-  o chapéu e a bermuda/bota ainda são os do avatar de referência; o cliente nativo envia o visual desse avatar.
+* Cada jogador aparece com o próprio rosto, pele, olhos, cabelo ou chapéu, camisa, calça e calçado (`cfg`); bermuda,
+  bota e as cores brilhantes ainda não. O cliente nativo envia ao servidor o visual do avatar de referência (falta o
+  editor de visual).
 * Interface parcial: tela inicial, chat da sala e nomes já existem; barra de botões, painéis (mochila, fazenda, culinária, amigos, ajustes) e chat global ainda não.
 
 ## Próximos passos
 
-1. Portar o resto do gerador de avatar (corpo em tubos, cabelo por campo de distância e surface nets, chapéus,
-   brilho), conferindo cada peça com a geometria gerada pelo navegador.
+1. Bermuda e bota (pernas em tubos, `tubeG`), brilho das cores brilhantes, editor de visual e animações (andar,
+   sentar, gestos e danças).
 2. Fauna, partículas e efeitos (chamas, brasas, chuva, estrela cadente), com comportamentos em Rhai.
 3. Resto da interface: barra de botões, painéis arrastáveis, chat global, ajustes (tema, escala, alto contraste).
 4. Sistemas de culinária e fazenda do lado do cliente, a partir do catálogo já exportado (`data/catalogs/catalog.json`).
