@@ -33,6 +33,8 @@ pub struct Rig {
     pub ph: f32,
     pub spd: f32,
     pub last: Option<Vec3>,
+    /// Boca do quadro (`mo.scale`): 0 normal, 1 alta, 2 grito; o rosto troca de textura ([`crate::look`]).
+    pub mouth: u8,
 }
 
 /// Pose de um quadro, nos mesmos termos do original (ângulos em radianos, ordem de Euler XYZ do three.js).
@@ -152,6 +154,7 @@ fn build_rigs(
             ph: 0.0,
             spd: 0.0,
             last: None,
+            mouth: 0,
         });
     }
 }
@@ -234,6 +237,9 @@ fn animate(
         set(rig.kn_r, &|t| t.rotation = euler(p.kn_r));
         set(rig.ft_l, &|t| t.rotation = euler(p.ft_l));
         set(rig.ft_r, &|t| t.rotation = euler(p.ft_r));
+        if rig.mouth != p.mouth {
+            rig.mouth = p.mouth;
+        }
     }
 }
 

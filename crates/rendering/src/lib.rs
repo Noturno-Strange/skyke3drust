@@ -45,6 +45,10 @@ pub mod flags {
     pub const SKY: u32 = 128;
     pub const GROUND: u32 = 256;
     pub const ADDITIVE: u32 = 512;
+    /// Material de avatar (`EMI` do original): soma 0,42 × a cor difusa como emissivo.
+    pub const AVATAR: u32 = 1024;
+    /// Cor brilhante (`EMIGK`): dois pontos de luz refletidos; a força fica em `fog_range.w`.
+    pub const GLOSS: u32 = 2048;
 }
 
 /// Luz e neblina de um mundo, já em espaço linear e com intensidades aplicadas (unidades do three.js).
@@ -289,5 +293,18 @@ impl ToonMaterial {
             AlphaMode::Opaque
         };
         Self { params, base_texture: d.texture.clone(), alpha_mode, cull, depth_write: d.depth_write }
+    }
+
+    /// Material de avatar: todos os do original (corpo, cabeça, orelhas, pés, cabelo, chapéus) somam o `EMI`.
+    pub fn avatar(mut self) -> Self {
+        self.params.flags |= flags::AVATAR;
+        self
+    }
+
+    /// Versão "cor brilhante" do material (`glossyOf`): `k` = 0,9 no corpo, 0,35 no cabelo.
+    pub fn glossy(mut self, k: f32) -> Self {
+        self.params.flags |= flags::GLOSS;
+        self.params.fog_range.w = k;
+        self
     }
 }

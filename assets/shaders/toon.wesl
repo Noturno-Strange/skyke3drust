@@ -74,6 +74,10 @@ const F_GROUND: u32 = 256u;
 // mistura aditiva (AdditiveBlending do three.js: SRC_ALPHA, ONE): o AlphaMode::Add do Bevy soma a cor direto, então
 // a cor sai já multiplicada pelo alfa
 const F_ADDITIVE: u32 = 512u;
+// avatar (`EMI`): emissivo extra de 0,42 × a cor difusa
+const F_AVATAR: u32 = 1024u;
+// cor brilhante (`EMIGK`): pontos de luz de duas luzes refletidas, força em fog_range.w
+const F_GLOSS: u32 = 2048u;
 
 const RECIPROCAL_PI: f32 = 0.3183098861837907;
 
@@ -178,6 +182,19 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @locatio
             direct += ramp(dot(n, to_fire / d)) * p.fire_color.rgb * att;
         }
         rgb = (direct + indirect) * lambert + p.emissive.rgb;
+        if (p.flags & F_AVATAR) != 0u {
+            rgb += diffuse.rgb * 0.42;
+        }
+        if (p.flags & F_GLOSS) != 0u {
+            // no espaço da câmera, como o GLSL do original (normal e vViewPosition em coordenadas de vista)
+            let vd = normalize(-position_world_to_view(in.world_position.xyz));
+            let nv = normalize((view.view_from_world * vec4<f32>(n, 0.0)).xyz);
+            let l1 = normalize(vec3<f32>(0.35, 0.75, 0.6));
+            let l2 = normalize(vec3<f32>(-0.6, 0.3, 0.5));
+            let sp = pow(max(dot(reflect(-l1, nv), vd), 0.0), 22.0)
+                + 0.25 * pow(max(dot(reflect(-l2, nv), vd), 0.0), 12.0);
+            rgb += vec3<f32>(0.85, 0.92, 1.0) * sp * p.fog_range.w;
+        }
     }
 
     if (p.flags & F_FOG) != 0u {
