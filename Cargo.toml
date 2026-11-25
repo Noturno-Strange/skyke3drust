@@ -42,9 +42,9 @@ serde_json = "1"
 thiserror = "2"
 sha2 = "0.10"
 hmac = "0.12"
-p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+p256 = { version = "0.14", features = ["ecdsa", "pkcs8", "getrandom", "std"] }
 base64 = "0.22"
-rand = "0.8"
+getrandom = "0.4"
 rhai = { version = "1.23", features = ["sync", "no_custom_syntax"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }

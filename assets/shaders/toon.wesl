@@ -71,6 +71,9 @@ const F_DOUBLE: u32 = 64u;
 const F_SKY: u32 = 128u;
 // chão (groundMat): cor média ao longe e ondulação de brilho
 const F_GROUND: u32 = 256u;
+// mistura aditiva (AdditiveBlending do three.js: SRC_ALPHA, ONE): o AlphaMode::Add do Bevy soma a cor direto, então
+// a cor sai já multiplicada pelo alfa
+const F_ADDITIVE: u32 = 512u;
 
 const RECIPROCAL_PI: f32 = 0.3183098861837907;
 
@@ -181,6 +184,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @locatio
         let depth = -position_world_to_view(in.world_position.xyz).z;
         let f = smoothstep(p.fog_range.x, p.fog_range.y, depth);
         rgb = srgb_to_linear(mix(linear_to_srgb(max(rgb, vec3<f32>(0.0))), p.fog_color.rgb, f));
+    }
+    if (p.flags & F_ADDITIVE) != 0u {
+        return vec4<f32>(rgb * diffuse.a, diffuse.a);
     }
     return vec4<f32>(rgb, diffuse.a);
 }

@@ -80,7 +80,7 @@ fn walk(
         me.moving = false;
         return;
     }
-    let k =|a: KeyCode, b: KeyCode| keys.pressed(a) || keys.pressed(b);
+    let k = |a: KeyCode, b: KeyCode| keys.pressed(a) || keys.pressed(b);
     let mut mv = Vec2::new(
         f32::from(u8::from(k(KeyCode::KeyD, KeyCode::ArrowRight)))
             - f32::from(u8::from(k(KeyCode::KeyA, KeyCode::ArrowLeft))),

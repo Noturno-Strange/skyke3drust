@@ -1581,11 +1581,11 @@
   "hemi": {
    "sky": "#deebce",
    "ground": "#060b04",
-   "intensity": 1.4193009881544987
+   "intensity": 1.447645894774177
   },
   "key": {
    "color": "#fff6ce",
-   "intensity": 1.1346772930309077,
+   "intensity": 1.1875220230569417,
    "position": [
     7.1875,
     10.14,
@@ -1614,8 +1614,8 @@
   },
   "fire": {
    "color": "#ff3206",
-   "intensity": 4.815204030608703,
-   "distance": 16.49319588421529,
+   "intensity": 4.324204501007986,
+   "distance": 16.061379143084356,
    "decay": 2,
    "position": [
     0,
@@ -1625,14 +1625,14 @@
   }
  },
  "fog": {
-  "color": "#d2e9f6",
+  "color": "#d4ebf8",
   "linear": [
-   0.8244115041902578,
-   0.9130848579189438,
-   0.9645363379754243
+   0.8316266751202537,
+   0.9218649511471784,
+   0.9736846136919278
   ],
-  "near": 46.2912,
-  "far": 180.2061
+  "near": 48,
+  "far": 186
  },
  "background": null,
  "renderer": {
@@ -1721,7 +1721,7 @@
    ],
    "rotation": 0,
    "color": "#ffffff",
-   "opacity": 0.92435,
+   "opacity": 1,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1747,7 +1747,7 @@
    ],
    "rotation": -0.14,
    "color": "#ffffff",
-   "opacity": 0.475525,
+   "opacity": 0.5,
    "additive": true,
    "depthTest": true,
    "depthWrite": false,
@@ -1773,7 +1773,7 @@
    ],
    "rotation": -0.14,
    "color": "#ffffff",
-   "opacity": 0.475525,
+   "opacity": 0.5,
    "additive": true,
    "depthTest": true,
    "depthWrite": false,
@@ -1799,7 +1799,7 @@
    ],
    "rotation": 0,
    "color": "#ffffff",
-   "opacity": 0.95105,
+   "opacity": 1,
    "additive": true,
    "depthTest": true,
    "depthWrite": false,
@@ -1825,7 +1825,7 @@
    ],
    "rotation": 0,
    "color": "#f2f9fd",
-   "opacity": 0.7798609999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1851,7 +1851,7 @@
    ],
    "rotation": 0,
    "color": "#f2f9fd",
-   "opacity": 0.7798609999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1877,7 +1877,7 @@
    ],
    "rotation": 0,
    "color": "#f2f9fd",
-   "opacity": 0.7798609999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1903,7 +1903,7 @@
    ],
    "rotation": 0,
    "color": "#f2f9fd",
-   "opacity": 0.7798609999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1929,7 +1929,7 @@
    ],
    "rotation": 0,
    "color": "#f2f9fd",
-   "opacity": 0.7798609999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1955,7 +1955,7 @@
    ],
    "rotation": 0,
    "color": "#f2f9fd",
-   "opacity": 0.7798609999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,

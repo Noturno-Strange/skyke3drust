@@ -157,6 +157,8 @@ struct SkyExtras {
     fog: bool,
     #[serde(default, rename = "vertexColors")]
     vertex_colors: bool,
+    #[serde(default)]
+    blending: String,
     #[serde(default, rename = "groundAvg")]
     ground_avg: Option<[f32; 3]>,
     #[serde(default)]
@@ -231,6 +233,7 @@ fn convert_materials(
                 fog: x.fog,
                 vertex_colors: x.vertex_colors && has_color,
                 ground_avg: x.ground_avg.map(Vec3::from),
+                additive: x.blending == "additive",
             };
             if let Some(t) = &d.texture {
                 mips.request(t.id());
@@ -283,11 +286,9 @@ fn spawn_sprites(
             fog: s.fog,
             vertex_colors: false,
             ground_avg: None,
+            additive: s.additive,
         };
-        let mut m = ToonMaterial::new(&d, lighting);
-        if s.additive {
-            m.alpha_mode = AlphaMode::Add;
-        }
+        let m = ToonMaterial::new(&d, lighting);
         // o centro do sprite pode não ser o meio do quad
         let off = Vec2::new(0.5 - s.center[0], 0.5 - s.center[1]);
         let mesh = meshes.add(Rectangle::new(1.0, 1.0).mesh().build().translated_by(off.extend(0.0)));

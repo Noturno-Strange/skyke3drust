@@ -29,16 +29,18 @@ com diferença maior que 24 em algum canal.
 
 | Mundo | Câmera do jogo: PSNR / pixels diferentes | Visão alta: PSNR / pixels diferentes |
 | --- | --- | --- |
-| Amazora | 27,6 dB / 4,8 % | 30,0 dB / 2,1 % |
-| Cerron | 23,9 dB / 10,6 % | 23,6 dB / 15,8 % |
-| Atlanthia | 24,6 dB / 7,7 % | 25,7 dB / 9,8 % |
-| Caatara | 23,2 dB / 25,9 % | 25,7 dB / 11,4 % |
-| Panthara | 25,2 dB / 8,9 % | 24,6 dB / 13,0 % |
-| Pamphora | 23,7 dB / 13,0 % | 22,9 dB / 17,5 % |
+| Amazora | 27,3 dB / 5,1 % | 30,0 dB / 2,1 % |
+| Cerron | 23,8 dB / 11,1 % | 23,6 dB / 15,8 % |
+| Atlanthia | 24,3 dB / 8,3 % | 25,7 dB / 9,8 % |
+| Caatara | 23,6 dB / 18,6 % | 25,7 dB / 11,4 % |
+| Panthara | 26,1 dB / 8,6 % | 24,6 dB / 13,0 % |
+| Pamphora | 23,9 dB / 11,9 % | 22,9 dB / 17,5 % |
 
 Histórico (câmera do jogo, Cerron): 39,7 % na primeira renderização → 16,7 % com domo do céu, chão e neblina em
 sRGB → 10,6 % com sombras e cores de luz lidas sem conversão (o original desliga o `THREE.ColorManagement`, então
-cores definidas por hex entram cruas no shader).
+cores definidas por hex entram cruas no shader). Caatara: 25,9 % → 18,6 % com a mistura aditiva
+(sol e brilhos) multiplicada pelo alfa, como `AdditiveBlending` do three.js. As capturas de referência variam um
+pouco entre exportações por causa da cintilação da fogueira.
 
 Para reproduzir: ver [ferramentas.md](ferramentas.md).
 

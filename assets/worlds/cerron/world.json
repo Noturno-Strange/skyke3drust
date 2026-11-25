@@ -1386,11 +1386,11 @@
   "hemi": {
    "sky": "#ffc461",
    "ground": "#251405",
-   "intensity": 1.3421052708156656
+   "intensity": 1.3672211228422781
   },
   "key": {
    "color": "#ffde8d",
-   "intensity": 1.1379429785943145,
+   "intensity": 1.1875220230569417,
    "position": [
     8.1875,
     9.36,
@@ -1419,8 +1419,8 @@
   },
   "fire": {
    "color": "#ff3206",
-   "intensity": 2.9327932030771118,
-   "distance": 16.109173767396122,
+   "intensity": 2.6946346917250144,
+   "distance": 15.777264527244931,
    "decay": 2,
    "position": [
     0,
@@ -1430,14 +1430,14 @@
   }
  },
  "fog": {
-  "color": "#ebd9ad",
+  "color": "#eedbad",
   "linear": [
-   0.9217141231988215,
-   0.8511280545662807,
-   0.6769179995196951
+   0.93139926677018,
+   0.8574840252028335,
+   0.6768252164710619
   ],
-  "near": 41.75711999999999,
-  "far": 174.73950000000002
+  "near": 43.199999999999996,
+  "far": 180
  },
  "background": null,
  "renderer": {
@@ -1526,7 +1526,7 @@
    ],
    "rotation": 0.2,
    "color": "#ffffff",
-   "opacity": 0.4770375,
+   "opacity": 0.5,
    "additive": true,
    "depthTest": true,
    "depthWrite": false,
@@ -1552,7 +1552,7 @@
    ],
    "rotation": 0.2,
    "color": "#ffffff",
-   "opacity": 0.4770375,
+   "opacity": 0.5,
    "additive": true,
    "depthTest": true,
    "depthWrite": false,
@@ -1578,7 +1578,7 @@
    ],
    "rotation": 0,
    "color": "#faf4e6",
-   "opacity": 0.7823414999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1604,7 +1604,7 @@
    ],
    "rotation": 0,
    "color": "#faf4e6",
-   "opacity": 0.7823414999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1630,7 +1630,7 @@
    ],
    "rotation": 0,
    "color": "#faf4e6",
-   "opacity": 0.7823414999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1656,7 +1656,7 @@
    ],
    "rotation": 0,
    "color": "#faf4e6",
-   "opacity": 0.7823414999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1682,7 +1682,7 @@
    ],
    "rotation": 0,
    "color": "#faf4e6",
-   "opacity": 0.7823414999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,
@@ -1708,7 +1708,7 @@
    ],
    "rotation": 0,
    "color": "#faf4e6",
-   "opacity": 0.7823414999999999,
+   "opacity": 0.82,
    "additive": false,
    "depthTest": true,
    "depthWrite": false,

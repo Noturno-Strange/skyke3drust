@@ -44,6 +44,7 @@ pub mod flags {
     pub const DOUBLE: u32 = 64;
     pub const SKY: u32 = 128;
     pub const GROUND: u32 = 256;
+    pub const ADDITIVE: u32 = 512;
 }
 
 /// Luz e neblina de um mundo, já em espaço linear e com intensidades aplicadas (unidades do three.js).
@@ -195,6 +196,8 @@ pub struct MaterialDesc {
     pub vertex_colors: bool,
     /// Cor média do chão (linear), quando o material é o chão do mundo.
     pub ground_avg: Option<Vec3>,
+    /// Mistura aditiva (`THREE.AdditiveBlending`).
+    pub additive: bool,
 }
 
 fn v4(v: Vec3, w: f32) -> Vec4 {
@@ -237,6 +240,9 @@ impl ToonMaterial {
         if d.ground_avg.is_some() {
             f |= flags::GROUND;
         }
+        if d.additive {
+            f |= flags::ADDITIVE;
+        }
         let ramp = match d.kind {
             Kind::SkyDome { hor, mid, top } => {
                 f = flags::SKY;
@@ -273,7 +279,9 @@ impl ToonMaterial {
             _ if d.back_side => Some(Face::Front),
             _ => Some(Face::Back),
         };
-        let alpha_mode = if d.transparent {
+        let alpha_mode = if d.additive {
+            AlphaMode::Add
+        } else if d.transparent {
             AlphaMode::Blend
         } else if let Some(c) = d.alpha_cutoff {
             AlphaMode::Mask(c)

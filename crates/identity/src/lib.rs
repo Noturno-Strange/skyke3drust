@@ -16,8 +16,6 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use p256::ecdsa::signature::{Signer, Verifier};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use p256::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey};
-use rand::RngCore;
-use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
 
 /// Separação de domínio das cargas assinadas.
@@ -68,9 +66,15 @@ pub fn valid_id(id: &str) -> bool {
 
 /// Nova chave do aparelho.
 pub fn new_device_key() -> String {
+    B64.encode(random32())
+}
+
+/// 32 bytes do gerador do sistema operacional. Sem entropia do sistema não há como criar chaves com segurança.
+fn random32() -> [u8; 32] {
     let mut b = [0u8; 32];
-    OsRng.fill_bytes(&mut b);
-    B64.encode(b)
+    #[allow(clippy::expect_used)]
+    getrandom::fill(&mut b).expect("gerador aleatório do sistema indisponível");
+    b
 }
 
 /// Cargas canônicas assinadas (iguais às de `assets/identity.js`).
@@ -119,7 +123,12 @@ impl std::fmt::Debug for KeyPair {
 
 impl KeyPair {
     pub fn generate() -> Self {
-        Self { sk: SigningKey::random(&mut OsRng) }
+        // escalar aleatório; os raros valores fora da faixa da curva (zero ou ≥ n) são sorteados de novo
+        loop {
+            if let Ok(sk) = SigningKey::from_slice(&random32()) {
+                return Self { sk };
+            }
+        }
     }
 
     /// Importa PKCS#8 DER (o formato que o cliente original exporta no código de recuperação).

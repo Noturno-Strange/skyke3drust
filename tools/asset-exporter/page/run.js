@@ -36,7 +36,8 @@ function materialInfo(m) {
     opacity: m.opacity,
     depthWrite: m.depthWrite,
     fog: m.fog !== false,
-    vertexColors: !!m.vertexColors
+    vertexColors: !!m.vertexColors,
+    blending: m.blending === THREE.AdditiveBlending ? 'additive' : m.blending === THREE.NormalBlending ? 'normal' : String(m.blending)
   };
   if (m.isMeshToonMaterial) {
     const info = { kind: 'toon', ramp: m.gradientMap === TG ? 'avatar' : 'scene', flat: !!m.flatShading, emissive: hex(m.emissive), ...base };
