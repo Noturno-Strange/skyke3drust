@@ -1,0 +1,20 @@
+[package]
+name = "sky-visual-comparator"
+description = "Compara capturas do cliente nativo com as de referência do cliente web (PSNR, diferença média, mapa de diferenças)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "visual-comparator"
+path = "src/main.rs"
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }

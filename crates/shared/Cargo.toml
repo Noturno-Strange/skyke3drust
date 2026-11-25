@@ -1,0 +1,17 @@
+[package]
+name = "sky-shared"
+description = "Tipos e constantes comuns do Skyke3D (sem dependências de engine)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,26 @@
+[package]
+name = "sky-client"
+description = "Cliente nativo do Skyke3D (Bevy)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "skyke3d"
+path = "src/main.rs"
+
+[dependencies]
+sky-shared.workspace = true
+sky-protocol.workspace = true
+sky-networking.workspace = true
+sky-rendering.workspace = true
+sky-world.workspace = true
+tokio.workspace = true
+bevy = { workspace = true, features = ["3d", "png", "x11", "wayland", "multi_threaded", "std", "default_font", "ui"] }

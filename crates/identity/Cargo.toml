@@ -1,0 +1,20 @@
+[package]
+name = "sky-identity"
+description = "Identidade sem conta: chaves ECDSA P-256, ids derivados e cargas assinadas."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sha2.workspace = true
+p256.workspace = true
+base64.workspace = true
+rand.workspace = true
+thiserror.workspace = true

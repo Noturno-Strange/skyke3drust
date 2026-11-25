@@ -1,0 +1,18 @@
+[package]
+name = "sky-scripting"
+description = "Integração Rhai em sandbox: limites, cache de compilação e recarga."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+rhai.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

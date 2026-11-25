@@ -1,0 +1,19 @@
+[package]
+name = "sky-protocol"
+description = "Protocolo do Skyke3D: mensagens JSON e pacotes binários compatíveis com o servidor Node.js."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sky-shared.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
