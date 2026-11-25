@@ -29,7 +29,6 @@ sky-shared = { path = "crates/shared" }
 sky-protocol = { path = "crates/protocol" }
 sky-security = { path = "crates/security" }
 sky-identity = { path = "crates/identity" }
-sky-scripting = { path = "crates/scripting" }
 sky-persistence = { path = "crates/persistence" }
 sky-networking = { path = "crates/networking" }
 sky-rendering = { path = "crates/rendering" }

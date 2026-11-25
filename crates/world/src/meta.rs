@@ -1,6 +1,6 @@
 //! `world.json`: metadados exportados de cada mundo pelo `tools/asset-exporter`.
 
-use bevy::color::{Color, LinearRgba, Srgba};
+use bevy::color::Srgba;
 use bevy::math::Vec3;
 use serde::Deserialize;
 use sky_rendering::ToonLighting;
@@ -140,8 +140,11 @@ pub enum MetaError {
     Version(u32),
 }
 
+/// Cor do `world.json`. O jogo original desliga o `THREE.ColorManagement`: cores definidas por hex entram cruas no
+/// shader (sem conversão sRGB → linear) e `getHexString()` devolve esses mesmos valores crus. Por isso o hex é lido
+/// direto como valor linear, sem conversão.
 pub(crate) fn lin(hex: &str) -> Vec3 {
-    let c: LinearRgba = Color::Srgba(Srgba::hex(hex).unwrap_or(Srgba::WHITE)).to_linear();
+    let c = Srgba::hex(hex).unwrap_or(Srgba::WHITE);
     Vec3::new(c.red, c.green, c.blue)
 }
 

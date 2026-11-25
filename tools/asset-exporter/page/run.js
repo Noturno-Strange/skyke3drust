@@ -83,6 +83,11 @@ function annotate(root) {
     // dados de jogo que o próprio objeto carrega (contorno, colisão etc.): só o que é JSON simples
     const ud = {};
     for (const [k, v] of Object.entries(o.userData)) if (k !== 'sky' && v !== null && ['number', 'string', 'boolean'].includes(typeof v)) ud[k] = v;
+    if (o.isMesh || o.isGroup) {
+      // sombras: markCasters só marca objetos pequenos perto do chão; o cenário quase todo recebe
+      if (o.castShadow) ud.cs = 1;
+      if (o.receiveShadow) ud.rs = 1;
+    }
     if (o.isInstancedMesh) ud.instanced = o.count;
     if (o.isPoints) ud.points = true;
     if (o.isSprite) ud.sprite = true;

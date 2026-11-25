@@ -8,7 +8,8 @@
 
 pub mod meta;
 
-use bevy::gltf::{GltfAssetLabel, GltfMaterialExtras};
+use bevy::gltf::{GltfAssetLabel, GltfExtras, GltfMaterialExtras};
+use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, NotShadowCaster, NotShadowReceiver};
 use bevy::prelude::*;
 use bevy::world_serialization::WorldAssetRoot;
 use serde::Deserialize;
@@ -33,7 +34,8 @@ impl Plugin for WorldPlugin {
         app.insert_resource(AssetsDir(self.assets_dir.clone()))
             .init_resource::<MaterialCache>()
             .add_message::<LoadWorld>()
-            .add_systems(Update, (load_world, convert_materials).chain())
+            .insert_resource(DirectionalLightShadowMap { size: 2048 })
+            .add_systems(Update, (load_world, convert_materials, shadow_flags).chain())
             .add_systems(PostUpdate, face_camera.before(bevy::transform::TransformSystems::Propagate));
     }
 }
@@ -52,6 +54,10 @@ pub struct CurrentWorld {
     pub meta: WorldMeta,
     pub lighting: ToonLighting,
 }
+
+/// Raiz do céu: nada dele projeta ou recebe sombra.
+#[derive(Component, Debug)]
+pub struct SkyPart;
 
 /// Marca as entidades raiz de um mundo (cenário e céu), para remover ao trocar.
 #[derive(Component, Debug)]
@@ -95,8 +101,33 @@ fn load_world(
     }
     for part in ["scene", "sky"] {
         let h = assets.load(GltfAssetLabel::Scene(0).from_asset(format!("worlds/{}/{part}.glb", w.id())));
-        commands.spawn((WorldAssetRoot(h), WorldPart, Name::new(format!("{w}/{part}"))));
+        let mut e = commands.spawn((WorldAssetRoot(h), WorldPart, Name::new(format!("{w}/{part}"))));
+        if part == "sky" {
+            e.insert(SkyPart);
+        }
     }
+    // Luz só para sombras: o material toon calcula a luz sozinho e usa do Bevy apenas o mapa de sombra desta luz,
+    // alinhada com a luz principal do mundo (no original: PCF 1024 numa caixa de 28 m que segue o jogador).
+    commands.spawn((
+        DirectionalLight {
+            illuminance: 0.0,
+            shadow_maps_enabled: true,
+            shadow_depth_bias: 0.02,
+            shadow_normal_bias: 0.6,
+            ..default()
+        },
+        Transform::from_translation(lighting.key_dir * 20.0).looking_at(Vec3::ZERO, Vec3::Y),
+        CascadeShadowConfigBuilder {
+            num_cascades: 1,
+            minimum_distance: 0.1,
+            maximum_distance: 32.0,
+            first_cascade_far_bound: 32.0,
+            overlap_proportion: 0.2,
+        }
+        .build(),
+        WorldPart,
+        Name::new(format!("{w}/sombra")),
+    ));
     spawn_sprites(&mut commands, &assets, &mut meshes, &mut toon_mats, w, &meta, &lighting);
     info!("mundo {w} ({}): {} assentos, {} sprites", w.biome(), meta.seats.len(), meta.sprites.len());
     commands.insert_resource(CurrentWorld { world: w, meta, lighting });
@@ -263,6 +294,8 @@ fn spawn_sprites(
         commands.spawn((
             Mesh3d(mesh),
             MeshMaterial3d(mats.add(m)),
+            NotShadowCaster,
+            NotShadowReceiver,
             Transform::from_translation(Vec3::from(s.pos)).with_scale(Vec3::new(s.scale[0], s.scale[1], 1.0)),
             Billboard { rotation: s.rotation },
             WorldPart,
@@ -276,5 +309,66 @@ fn face_camera(cam: Query<&GlobalTransform, With<Camera3d>>, mut q: Query<(&mut 
     let (_, rot, _) = cam.to_scale_rotation_translation();
     for (mut t, b) in &mut q {
         t.rotation = rot * Quat::from_rotation_z(b.rotation);
+    }
+}
+
+#[derive(Deserialize, Default)]
+struct NodeExtras {
+    #[serde(default)]
+    sky: NodeSky,
+}
+
+#[derive(Deserialize, Default)]
+struct NodeSky {
+    #[serde(default)]
+    cs: u8,
+    #[serde(default)]
+    rs: u8,
+}
+
+/// Aplica `castShadow`/`receiveShadow` exportados de cada objeto (no original só objetos pequenos perto do chão
+/// projetam sombra) às malhas do nó. Malhas sem nó anotado (céu, sprites) não projetam sombra.
+#[allow(clippy::too_many_arguments)]
+fn shadow_flags(
+    mut commands: Commands,
+    nodes: Query<(Entity, &GltfExtras), Added<GltfExtras>>,
+    new_meshes: Query<Entity, Added<Mesh3d>>,
+    children: Query<&Children>,
+    parents: Query<&ChildOf>,
+    has_extras: Query<&GltfExtras>,
+    sky: Query<(), With<SkyPart>>,
+    meshes: Query<(), With<Mesh3d>>,
+) {
+    for (e, x) in &nodes {
+        let n: NodeExtras = serde_json::from_str(&x.value).unwrap_or_default();
+        let mut targets = vec![e];
+        targets.extend(children.iter_descendants(e).filter(|c| meshes.contains(*c)));
+        for t in targets {
+            let mut ec = commands.entity(t);
+            if n.sky.cs == 0 {
+                ec.insert(NotShadowCaster);
+            }
+            if n.sky.rs == 0 {
+                ec.insert(NotShadowReceiver);
+            }
+        }
+    }
+    // malhas sem anotação (nó sem extras): não projetam sombra; as do céu também não recebem
+    for m in &new_meshes {
+        let mut cur = Some(m);
+        let mut annotated = false;
+        let mut in_sky = false;
+        while let Some(c) = cur {
+            annotated |= has_extras.contains(c);
+            in_sky |= sky.contains(c);
+            cur = parents.get(c).ok().map(ChildOf::parent);
+        }
+        if !annotated || in_sky {
+            let mut ec = commands.entity(m);
+            ec.insert(NotShadowCaster);
+            if in_sky {
+                ec.insert(NotShadowReceiver);
+            }
+        }
     }
 }

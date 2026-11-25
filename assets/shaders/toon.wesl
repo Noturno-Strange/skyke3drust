@@ -11,7 +11,21 @@
 
 import bevy_pbr::render::forward_io::VertexOutput;
 import bevy_pbr::render::view_transformations::position_world_to_view;
-import bevy_pbr::render::mesh_view_bindings::view;
+import bevy_pbr::render::mesh_view_bindings::{view, lights};
+import bevy_pbr::render::mesh_view_types::DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT;
+import bevy_pbr::render::shadows::fetch_directional_shadow;
+
+// Sombra da luz principal: a única luz direcional do Bevy na cena existe só para gerar este mapa.
+fn key_shadow(world_pos: vec4<f32>, n: vec3<f32>, frag_xy: vec2<f32>) -> f32 {
+    if lights.n_directional_lights == 0u {
+        return 1.0;
+    }
+    if (lights.directional_lights[0].flags & DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT) == 0u {
+        return 1.0;
+    }
+    let view_z = position_world_to_view(world_pos.xyz).z;
+    return fetch_directional_shadow(0u, world_pos, n, view_z, frag_xy);
+}
 
 fn view_position() -> vec3<f32> {
     return view.world_position.xyz;
@@ -148,7 +162,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @locatio
         var indirect = mix(p.hemi_ground.rgb, p.hemi_sky.rgb, w);
 
         // direta: principal, preenchimento e fogueira, em faixas
-        var direct = ramp(dot(n, p.key_dir.xyz)) * p.key_color.rgb;
+        // como no three.js: a sombra multiplica a cor da luz antes da rampa (directLight.color *= shadow)
+        let shadow = key_shadow(in.world_position, n, in.position.xy);
+        var direct = ramp(dot(n, p.key_dir.xyz)) * p.key_color.rgb * shadow;
         direct += ramp(dot(n, p.fill_dir.xyz)) * p.fill_color.rgb;
         let to_fire = p.fire_pos.xyz - in.world_position.xyz;
         let d = length(to_fire);
