@@ -15,9 +15,10 @@ pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Controls>()
-            .add_systems(Startup, spawn_me)
-            .add_systems(Update, (walk, follow_camera, interpolate).chain());
+        app.init_resource::<Controls>().add_systems(Startup, spawn_me).add_systems(
+            Update,
+            (walk.run_if(in_state(crate::state::Screen::Playing)), follow_camera, interpolate).chain(),
+        );
     }
 }
 
@@ -70,9 +71,16 @@ fn walk(
     time: Res<Time>,
     ctl: Res<Controls>,
     mut me: Query<(&mut Transform, &mut Me)>,
+    focus: Res<bevy::input_focus::InputFocus>,
+    inputs: Query<(), With<bevy::text::EditableText>>,
 ) {
     let Ok((mut t, mut me)) = me.single_mut() else { return };
-    let k = |a: KeyCode, b: KeyCode| keys.pressed(a) || keys.pressed(b);
+    // digitando no chat ou num campo: as teclas não movem o avatar
+    if crate::hud::typing(&focus, &inputs) {
+        me.moving = false;
+        return;
+    }
+    let k =|a: KeyCode, b: KeyCode| keys.pressed(a) || keys.pressed(b);
     let mut mv = Vec2::new(
         f32::from(u8::from(k(KeyCode::KeyD, KeyCode::ArrowRight)))
             - f32::from(u8::from(k(KeyCode::KeyA, KeyCode::ArrowLeft))),

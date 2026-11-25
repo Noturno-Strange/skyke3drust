@@ -1,0 +1,16 @@
+[package]
+name = "sky-ui"
+description = "Interface do Skyke3D em Bevy UI: tema do jogo original (claro, escuro, alto contraste), fonte e componentes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bevy = { workspace = true, features = ["ui", "default_font", "system_font_discovery"] }

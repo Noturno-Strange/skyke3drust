@@ -10,6 +10,7 @@ members = [
     "crates/networking",
     "crates/rendering",
     "crates/world",
+    "crates/ui",
     "crates/client",
     "tools/visual-comparator",
 ]
@@ -33,6 +34,7 @@ sky-persistence = { path = "crates/persistence" }
 sky-networking = { path = "crates/networking" }
 sky-rendering = { path = "crates/rendering" }
 sky-world = { path = "crates/world" }
+sky-ui = { path = "crates/ui" }
 
 # externos
 serde = { version = "1", features = ["derive"] }

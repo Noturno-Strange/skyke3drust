@@ -4,8 +4,8 @@ use bevy::prelude::Resource;
 use sky_shared::World;
 use std::path::PathBuf;
 
-pub const USAGE: &str = "uso: skyke3d [--world MUNDO] [--server URL --name NOME [--join CODIGO | --bots N]] \
-[--shot jogo|alto --out ARQUIVO.png] [--assets PASTA]\n\
+pub const USAGE: &str = "uso: skyke3d [--world MUNDO] [--explore] [--server URL --name NOME [--join CODIGO | --bots N]] \
+[--shot jogo|alto --out ARQUIVO.png] [--capture SEGUNDOS --out ARQUIVO.png] [--assets PASTA]\n\
 mundos: amazora, cerron, atlanthia, caatara, panthara, pamphora";
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -18,11 +18,15 @@ pub struct Args {
     pub shot: Option<String>,
     pub out: PathBuf,
     pub assets: Option<PathBuf>,
+    /// Explorar o mundo sem conexão, pulando a tela inicial.
+    pub explore: bool,
+    /// Captura a janela inteira (com a interface) depois de N segundos e fecha.
+    pub capture: Option<f32>,
 }
 
 impl Args {
     pub fn parse(mut it: impl Iterator<Item = String>) -> Result<Self, String> {
-        let mut a = Args { name: "Visitante".into(), out: "captura.png".into(), ..Default::default() };
+        let mut a = Args { name: String::new(), out: "captura.png".into(), ..Default::default() };
         while let Some(k) = it.next() {
             let mut val = || it.next().ok_or_else(|| format!("{k} precisa de um valor"));
             match k.as_str() {
@@ -34,11 +38,17 @@ impl Args {
                 "--shot" => a.shot = Some(val()?),
                 "--out" => a.out = val()?.into(),
                 "--assets" => a.assets = Some(val()?.into()),
+                "--explore" => a.explore = true,
+                "--capture" => a.capture = Some(val()?.parse().map_err(|_| "--capture precisa de segundos")?),
                 "-h" | "--help" => return Err(String::new()),
                 _ => return Err(format!("argumento desconhecido: {k}")),
             }
         }
         Ok(a)
+    }
+
+    pub fn name_or_empty(&self) -> String {
+        self.name.clone()
     }
 
     /// Pasta de assets: `--assets`, `SKYKE3D_ASSETS`, `assets/` ao lado do executável ou a do repositório.

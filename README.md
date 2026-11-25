@@ -15,13 +15,15 @@ agora sobre Rust, Bevy (WGPU/Vulkan), shaders WGSL e scripts Rhai.
 Requisitos: Rust 1.85+ e, no Linux, `libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev` (ou equivalentes).
 
 ```bash
-cargo run --release -p sky-client --bin skyke3d -- --world cerron
+cargo run --release -p sky-client --bin skyke3d                         # tela inicial
+cargo run --release -p sky-client --bin skyke3d -- --world cerron --explore   # direto no mundo, sem rede
 ```
 
 | Tecla | Ação |
 | --- | --- |
 | W A S D / setas | andar |
 | Q / E | girar a câmera |
+| Enter / Esc | abrir e enviar o chat / voltar ao jogo |
 
 Entrar no servidor do jogo (o mesmo do navegador):
 
@@ -43,6 +45,7 @@ crates/
   scripting/    Rhai em sandbox (limites, cache de compilação, recarga)
   persistence/  gravação atômica e perfis online/offline separados
   networking/   cliente Tokio: ticket → WebSocket → identidade → sala
+  ui/           tema do original (escuro, claro, alto contraste), fonte Manrope, painel, botão, campo de texto
   rendering/    material toon WGSL que reproduz o MeshToonMaterial do original, mipmaps
   world/        carrega os mundos exportados (GLB + world.json), troca materiais, sprites
   client/       o jogo (binário `skyke3d`)

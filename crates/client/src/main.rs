@@ -1,22 +1,27 @@
 //! Skyke3D nativo.
 //!
 //! ```text
-//! skyke3d [--world cerron]                         # explorar um mundo sem rede
+//! skyke3d                                              # tela inicial
+//! skyke3d --world cerron --explore                     # explorar um mundo sem rede
 //! skyke3d --server http://localhost:3000 --name Ana [--world cerron --bots 3 | --join ABCDE-FGHJK]
-//! skyke3d --world cerron --shot jogo --out cerron.png   # captura de referência para o comparador visual
+//! skyke3d --world cerron --shot jogo --out cerron.png  # captura de referência para o comparador visual
 //! ```
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 mod args;
+mod hud;
+mod menu;
 mod net;
 mod player;
 mod shot;
+mod state;
 
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use sky_world::{LoadWorld, WorldPlugin};
+use state::{ChatLog, ConnectError, ConnectRequest, Screen, SendChat, Session};
 
 fn main() {
     let a = match args::Args::parse(std::env::args().skip(1)) {
@@ -40,20 +45,34 @@ fn main() {
         },
     ))
     .insert_resource(ClearColor(Color::BLACK))
-    .add_plugins(WorldPlugin { assets_dir: assets.clone() })
-    .add_plugins(player::PlayerPlugin)
+    .init_state::<Screen>()
+    .init_resource::<Session>()
+    .init_resource::<ChatLog>()
+    .init_resource::<ConnectError>()
+    .add_message::<ConnectRequest>()
+    .add_message::<SendChat>()
+    .add_plugins((WorldPlugin { assets_dir: assets.clone() }, sky_ui::SkyUiPlugin))
+    .add_plugins((player::PlayerPlugin, net::NetPlugin, hud::HudPlugin))
     .insert_resource(a.clone())
     .add_systems(Startup, setup);
     if let Some(shot) = &a.shot {
         app.add_plugins(shot::ShotPlugin { name: shot.clone(), out: a.out.clone() });
+    } else {
+        app.add_plugins(menu::MenuPlugin);
     }
-    if a.server.is_some() {
-        app.add_plugins(net::NetPlugin);
+    if let Some(after) = a.capture {
+        app.add_plugins(shot::CapturePlugin { after, out: a.out.clone() });
     }
     app.run();
 }
 
-fn setup(mut commands: Commands, a: Res<args::Args>, mut load: MessageWriter<LoadWorld>) {
+fn setup(
+    mut commands: Commands,
+    a: Res<args::Args>,
+    mut load: MessageWriter<LoadWorld>,
+    mut req: MessageWriter<ConnectRequest>,
+    mut next: ResMut<NextState<Screen>>,
+) {
     // Mesma câmera do cliente web: perspectiva de 60° na vertical, de 0,1 a 600 m, sem tone mapping e saída sRGB.
     commands.spawn((
         Camera3d::default(),
@@ -63,7 +82,20 @@ fn setup(mut commands: Commands, a: Res<args::Args>, mut load: MessageWriter<Loa
         Msaa::Sample4,
         Transform::from_xyz(0.0, 4.8, 14.2).looking_at(Vec3::new(0.0, 1.2, 2.0), Vec3::Y),
     ));
-    if a.server.is_none() {
+    if a.shot.is_some() {
         load.write(LoadWorld(a.world));
+    } else if let Some(server) = &a.server {
+        // linha de comando com servidor: entra direto, sem a tela inicial
+        req.write(ConnectRequest {
+            server: server.clone(),
+            name: a.name.clone(),
+            join: a.join.clone(),
+            world: a.world,
+            bots: a.bots,
+        });
+        next.set(Screen::Connecting);
+    } else if a.explore {
+        load.write(LoadWorld(a.world));
+        next.set(Screen::Playing);
     }
 }

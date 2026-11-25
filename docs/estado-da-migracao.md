@@ -13,7 +13,7 @@ sem teste funcional; a coluna "Validação" diz como cada item foi conferido.
 | 4 | Protótipo Bevy com um cenário original | feito: os 6 mundos abrem no cliente nativo com os modelos originais |
 | 5 | Materiais, iluminação e shaders toon | feito: toon, contorno, domo do céu, chão, neblina, sprites e sombras; ajustes finos na lista abaixo |
 | 6 | Avatares, personalização e animações | iniciado: modelo de referência exportado e desenhado; editor e animações pendentes |
-| 7 | Interface original | pendente |
+| 7 | Interface original | em andamento: tela inicial (nome, mundo, bots, servidor, criar, entrar, explorar), código da sala e lotação, chat da sala e nomes sobre os avatares, com as cores e a fonte do original; faltam a barra de botões e os painéis |
 | 8 | Compatibilidade com o servidor existente | núcleo feito: ticket, identidade, entrar/criar sala, posições, eventos de sala |
 | 9 | Gameplay e Rhai | sandbox Rhai pronta; sistemas de gameplay pendentes |
 | 10 | Áudio, voz, rádio e karaokê | pendente (protocolo de voz já decodificado) |
@@ -73,14 +73,14 @@ Para reproduzir: ver [ferramentas.md](ferramentas.md).
   use o cliente nativo para testes.
 * Todos os atores usam o mesmo avatar de referência (exportado do menu do jogo web); o visual de cada jogador
   (`cfg`) ainda não é aplicado.
-* Sem interface: chat, nomes, painéis e menus ainda não existem no cliente nativo (eventos vão para o log).
+* Interface parcial: tela inicial, chat da sala e nomes já existem; barra de botões, painéis (mochila, fazenda, culinária, amigos, ajustes) e chat global ainda não.
 
 ## Próximos passos
 
 1. Exportar as partes do avatar separadas (rostos, cabelos, chapéus, roupas) e montar o avatar pelo `cfg`, com
    comparação visual por peça.
 2. Fauna, partículas e efeitos (chamas, brasas, chuva, estrela cadente), com comportamentos em Rhai.
-3. Interface com Bevy UI a partir de `index.html`/`app.css` (temas claro, escuro e alto contraste, escala).
+3. Resto da interface: barra de botões, painéis arrastáveis, chat global, ajustes (tema, escala, alto contraste).
 4. Catálogo declarativo (`catalog.js` → `data/*.json`) e sistemas de culinária e fazenda do lado do cliente.
 5. Voz (Opus) e áudio; mídia em WebView isolada.
 6. Servidor Rust (Axum + Tokio + Rustls) validado contra a suíte de testes do servidor Node.js.

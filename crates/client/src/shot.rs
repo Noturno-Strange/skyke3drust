@@ -70,3 +70,38 @@ fn run(
         exit.write(AppExit::Success);
     }
 }
+
+/// Captura da janela inteira (interface incluída) depois de alguns segundos, para conferir telas.
+#[derive(Debug)]
+pub struct CapturePlugin {
+    pub after: f32,
+    pub out: PathBuf,
+}
+
+#[derive(Resource, Debug)]
+struct Capture {
+    after: f32,
+    out: PathBuf,
+    taken_at: Option<f32>,
+}
+
+impl Plugin for CapturePlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(Capture { after: self.after, out: self.out.clone(), taken_at: None })
+            .add_systems(Update, capture);
+    }
+}
+
+fn capture(mut commands: Commands, mut c: ResMut<Capture>, time: Res<Time<Real>>, mut exit: MessageWriter<AppExit>) {
+    let t = time.elapsed_secs();
+    match c.taken_at {
+        None if t >= c.after => {
+            c.taken_at = Some(t);
+            commands.spawn(Screenshot::primary_window()).observe(save_to_disk(c.out.clone()));
+        }
+        Some(at) if t - at > 1.5 => {
+            exit.write(AppExit::Success);
+        }
+        _ => {}
+    }
+}
