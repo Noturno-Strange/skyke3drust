@@ -114,12 +114,12 @@ fn euler(v: Vec3) -> Quat {
 #[allow(clippy::type_complexity)]
 fn build_rigs(
     mut commands: Commands,
-    actors: Query<Entity, (Or<(With<Me>, With<Remote>)>, Without<Rig>)>,
+    actors: Query<(Entity, Option<&crate::look::AvatarLook>), (Or<(With<Me>, With<Remote>)>, Without<Rig>)>,
     children: Query<&Children>,
     names: Query<(&Name, &Transform)>,
     kit: Option<Res<crate::look::AvatarKit>>,
 ) {
-    for e in &actors {
+    for (e, look) in &actors {
         let mut found = std::collections::HashMap::new();
         for c in children.iter_descendants(e) {
             if let Ok((n, t)) = names.get(c) {
@@ -148,7 +148,7 @@ fn build_rigs(
             ft_l,
             ft_r,
             lg_x: [lx("lgL"), lx("lgR")],
-            fy: kit.as_ref().map_or(0.247, |k| k.fy),
+            fy: look.map_or_else(|| kit.as_ref().map_or(0.247, |k| k.fy), |l| sky_avatars::body::fy(&l.0)),
             ph: 0.0,
             spd: 0.0,
             last: None,

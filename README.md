@@ -46,7 +46,7 @@ crates/
   scripting/    Rhai em sandbox (limites, cache de compilação, recarga)
   persistence/  gravação atômica e perfis online/offline separados
   networking/   cliente Tokio: ticket → WebSocket → identidade → sala
-  avatars/      paletas e validação do visual, rosto gerado por pixel (idêntico ao navegador)
+  avatars/      paletas e validação do visual, rosto gerado por pixel (idêntico ao navegador), cores do cabelo, pernas e pés
   ui/           tema do original (escuro, claro, alto contraste), fonte Manrope, painel, botão, campo de texto
   rendering/    material toon WGSL que reproduz o MeshToonMaterial do original, mipmaps
   world/        carrega os mundos exportados (GLB + world.json), troca materiais, sprites

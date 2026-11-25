@@ -1,8 +1,9 @@
 //! Visual de cada avatar a partir do `cfg`.
 //!
-//! Hoje: rosto, pele e olhos (textura da cabeça gerada por `sky-avatars`, idêntica à do navegador) e as cores de pele,
-//! camisa, calça e calçado (as cores do avatar de referência exportado são trocadas pelas do `cfg`). O formato do
-//! cabelo, o chapéu, bermuda e bota ainda vêm do avatar de referência até a geração dessas peças ser portada.
+//! Hoje: rosto, pele e olhos (textura da cabeça gerada por `sky-avatars`, idêntica à do navegador), cabelo ou chapéu,
+//! pernas e pés (bermuda e bota) gerados para o `cfg`, e as cores de pele, camisa, calça e calçado no resto do corpo
+//! (as cores do avatar de referência exportado são trocadas pelas do `cfg`). Tronco e braços ainda têm o formato do
+//! avatar de referência.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::gltf::GltfExtras;
@@ -11,7 +12,7 @@ use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use sky_avatars::hair::{HairShape, paint};
-use sky_avatars::{Cfg, Palette, Palettes, head};
+use sky_avatars::{Cfg, Palette, Palettes, body, head};
 use sky_rendering::{Kind, MaterialDesc, Ramp, ToonMaterial};
 use sky_world::CurrentWorld;
 use std::collections::{BTreeMap, HashMap};
@@ -189,6 +190,9 @@ fn apply_looks(
     mut images: ResMut<Assets<Image>>,
     parents: Query<&ChildOf>,
     old_parts: Query<Entity, With<HairPart>>,
+    names: Query<&Name>,
+    mut transforms: Query<&mut Transform>,
+    mut rigs: Query<&mut crate::anim::Rig>,
     world: Option<Res<CurrentWorld>>,
 ) {
     let Some(world) = world else { return };
@@ -203,6 +207,20 @@ fn apply_looks(
             continue;
         }
         let map = color_map(&kit, &look.0);
+        let legs = body::legs(&kit.palettes, &look.0, true);
+        // junta mais próxima acima de `x` (dentro do avatar): coxa em lgL/lgR, canela em knL/knR, pé em ftL/ftR
+        let joint = |mut x: Entity| -> Option<u8> {
+            while x != e {
+                x = parents.get(x).ok()?.parent();
+                match names.get(x).map(Name::as_str) {
+                    Ok("lgL" | "lgR") => return Some(0),
+                    Ok("knL" | "knR") => return Some(1),
+                    Ok("ftL" | "ftR") => return Some(2),
+                    _ => {}
+                }
+            }
+            None
+        };
         // cabeça: o nó com `head: 1` nos extras; a malha é ele ou um filho
         let head_nodes: Vec<Entity> =
             all.iter().copied().filter(|c| extras.get(*c).is_ok_and(|x| x.value.contains("\"head\":1"))).collect();
@@ -253,6 +271,16 @@ fn apply_looks(
                 commands.entity(*c).insert(MeshMaterial3d(m));
             }
             let src = orig.map_or_else(|| m3.0.clone(), |o| o.0.clone());
+            // coxa e canela: geradas para o visual (bermuda, bota e cores), no lugar das do avatar de referência
+            if let Some(k @ (0 | 1)) = joint(*c) {
+                let t = if k == 0 { &legs.thigh } else { &legs.shin };
+                let mut ec = commands.entity(*c);
+                if orig.is_none() {
+                    ec.insert(OriginalMesh(src));
+                }
+                ec.insert(Mesh3d(meshes.add(tri_mesh(&t.positions, &t.normals, Some(&t.colors)))));
+                continue;
+            }
             let Some(mesh) = meshes.get(&src) else { continue };
             if !mesh.contains_attribute(Mesh::ATTRIBUTE_COLOR) {
                 continue;
@@ -274,6 +302,18 @@ fn apply_looks(
                 ec.insert(OriginalMesh(src));
             }
             ec.insert(Mesh3d(meshes.add(mesh)));
+        }
+        // pé: esfera unitária no nó filho de ftL/ftR, com escala e deslocamento de tênis ou bota
+        for c in &all {
+            let is_foot =
+                parents.get(*c).is_ok_and(|p| names.get(p.parent()).is_ok_and(|n| matches!(n.as_str(), "ftL" | "ftR")));
+            if is_foot && let Ok(mut t) = transforms.get_mut(*c) {
+                t.translation = Vec3::from(legs.foot_center);
+                t.scale = Vec3::from(legs.foot_radii);
+            }
+        }
+        if let Ok(mut rig) = rigs.get_mut(e) {
+            rig.fy = body::fy(&look.0);
         }
         // cabelo ou chapéu do visual, no grupo da cabeça (o pai do nó da cabeça), no lugar dos do avatar de referência
         for c in &all {
