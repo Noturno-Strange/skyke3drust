@@ -5793,7 +5793,7 @@ dependencies = [
 
 [[package]]
 name = "sky-avatars"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "image",
  "serde",
@@ -5803,7 +5803,7 @@ dependencies = [
 
 [[package]]
 name = "sky-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bevy",
  "serde",
@@ -5825,7 +5825,7 @@ dependencies = [
 
 [[package]]
 name = "sky-identity"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "getrandom 0.4.3",
@@ -5836,7 +5836,7 @@ dependencies = [
 
 [[package]]
 name = "sky-networking"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -5858,7 +5858,7 @@ dependencies = [
 
 [[package]]
 name = "sky-persistence"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5867,7 +5867,7 @@ dependencies = [
 
 [[package]]
 name = "sky-protocol"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5877,14 +5877,14 @@ dependencies = [
 
 [[package]]
 name = "sky-rendering"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bevy",
 ]
 
 [[package]]
 name = "sky-scripting"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rhai",
  "thiserror 2.0.21",
@@ -5893,7 +5893,7 @@ dependencies = [
 
 [[package]]
 name = "sky-security"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "hmac 0.12.1",
@@ -5903,7 +5903,7 @@ dependencies = [
 
 [[package]]
 name = "sky-shared"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -5911,21 +5911,21 @@ dependencies = [
 
 [[package]]
 name = "sky-ui"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bevy",
 ]
 
 [[package]]
 name = "sky-visual-comparator"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "image",
 ]
 
 [[package]]
 name = "sky-world"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bevy",
  "serde",
