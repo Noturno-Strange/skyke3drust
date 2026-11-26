@@ -17,7 +17,13 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Controls>().add_systems(Startup, spawn_me).add_systems(
             Update,
-            (walk.run_if(in_state(crate::state::Screen::Playing)), follow_camera, interpolate_system).chain(),
+            (
+                click_dest.run_if(in_state(crate::state::Screen::Playing)),
+                walk.run_if(in_state(crate::state::Screen::Playing)),
+                follow_camera,
+                interpolate_system,
+            )
+                .chain(),
         );
     }
 }
@@ -31,6 +37,8 @@ pub struct Me {
     /// Altura do pulo e velocidade vertical.
     pub jy: f32,
     pub vy: f32,
+    /// Destino de um clique no chão (`dest` no original).
+    pub dest: Option<Vec2>,
 }
 
 /// Assento: posição, giro e a pose de quem senta (altura, deslocamento do corpo, dobra do joelho), como `seat()`.
@@ -144,6 +152,7 @@ fn walk(
             let free: Vec<SeatPose> = seats(world).into_iter().filter(|s| !taken(s)).collect();
             match seat_near(&free, here.x, here.y, 1.5) {
                 Some(s) => {
+                    me.dest = None;
                     t.translation = Vec3::new(s.x, 0.0, s.z);
                     t.rotation = Quat::from_rotation_y(s.r);
                     me.seat = Some(s);
@@ -180,15 +189,75 @@ fn walk(
         // andar levanta
         me.seat = None;
     }
+    let before = Vec2::new(t.translation.x, t.translation.z);
+    // teclas cancelam o clique; sem teclas, anda até o destino e para a 15 cm dele
+    let mut limit = f32::INFINITY;
     if mv.length_squared() > 0.0 {
+        me.dest = None;
+    } else if me.seat.is_none()
+        && let Some(dest) = me.dest
+    {
+        let d = dest - before;
+        if d.length() < 0.15 {
+            me.dest = None;
+        } else {
+            mv = d;
+            limit = d.length();
+        }
+    }
+    if mv.length_squared() > 0.0 && me.seat.is_none() {
         let d = mv.normalize();
-        let before = Vec2::new(t.translation.x, t.translation.z);
-        let p = clamp_walk(before + d * WALK_SPEED * time.delta_secs());
+        let p = clamp_walk(before + d * (WALK_SPEED * dt).min(limit));
         t.translation.x = p.x;
         t.translation.z = p.y;
         t.rotation = Quat::from_rotation_y(d.x.atan2(d.y));
-        me.moving = p.distance(before) > time.delta_secs() * 0.8;
+        let moved = p.distance(before);
+        me.moving = moved > dt * 0.8;
+        // preso na borda da área: desiste do destino
+        if me.dest.is_some() && moved < dt * 0.2 {
+            me.dest = None;
+        }
     }
+}
+
+/// Botão esquerdo no chão (fora da interface): o destino é onde o raio da câmera corta o plano do chão; segurar e
+/// arrastar atualiza o destino (`setDest` no original). Sentado, o clique não faz nada.
+fn click_dest(
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    cam: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    hover: Res<bevy::picking::hover::HoverMap>,
+    mut me: Query<&mut Me>,
+    mut held: Local<bool>,
+) {
+    if mouse.just_released(MouseButton::Left) {
+        *held = false;
+    }
+    let over_ui = hover.get(&bevy::picking::pointer::PointerId::Mouse).is_some_and(|m| !m.is_empty());
+    if mouse.just_pressed(MouseButton::Left) {
+        *held = !over_ui;
+    }
+    if !*held || !mouse.pressed(MouseButton::Left) {
+        return;
+    }
+    let (Ok(w), Ok((camera, cam_t)), Ok(mut me)) = (windows.single(), cam.single(), me.single_mut()) else { return };
+    if me.seat.is_some() {
+        return;
+    }
+    let Some(cursor) = w.cursor_position() else { return };
+    let Ok(ray) = camera.viewport_to_world(cam_t, cursor) else { return };
+    if let Some(p) = ground_hit(ray.origin, *ray.direction) {
+        me.dest = Some(clamp_walk(p));
+    }
+}
+
+/// Onde um raio corta o plano do chão (y = 0), se corta à frente.
+pub fn ground_hit(o: Vec3, d: Vec3) -> Option<Vec2> {
+    if d.y.abs() < 1e-6 {
+        return None;
+    }
+    let t = -o.y / d.y;
+    (t > 0.0).then(|| Vec2::new(o.x + d.x * t, o.z + d.z * t))
 }
 
 /// Câmera do jogo: 9,2 m atrás e 4,8 m acima, olhando 3 m à frente do avatar, com suavização exponencial.
@@ -300,6 +369,14 @@ impl Remote {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ground_ray() {
+        // câmera a 4,8 m olhando para baixo e para a frente: corta o chão à frente
+        let p = ground_hit(Vec3::new(0.0, 4.8, 9.2), Vec3::new(0.0, -0.48, -0.88)).unwrap();
+        assert!((p.x).abs() < 1e-6 && (p.y - (9.2 - 0.88 * 10.0)).abs() < 1e-4);
+        assert!(ground_hit(Vec3::new(0.0, 4.8, 0.0), Vec3::new(0.0, 1.0, 0.0)).is_none());
+    }
 
     #[test]
     fn walk_clamp() {
