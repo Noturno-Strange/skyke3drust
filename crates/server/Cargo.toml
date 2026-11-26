@@ -33,6 +33,7 @@ unicode-normalization = "0.1"
 flate2 = "1"
 brotli = "8"
 regex = "1"
+futures-util = { workspace = true }
 
 [lints]
 workspace = true

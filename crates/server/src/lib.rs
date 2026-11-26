@@ -7,17 +7,24 @@
 pub mod admission;
 pub mod auth;
 pub mod banmgr;
+pub mod bots;
 pub mod capacity;
 pub mod catalog;
 pub mod config;
+pub mod game;
+pub mod http;
 pub mod identity;
+pub mod identity_ws;
 pub mod limits;
 pub mod names;
 pub mod netutil;
 pub mod persist;
+pub mod playerdata;
 pub mod profanity;
 pub mod seclog;
+pub mod social;
 pub mod validate;
+pub mod web;
 
 /// Agora em milissegundos desde 1970 (`Date.now()`).
 pub fn now() -> u64 {
@@ -34,4 +41,9 @@ pub fn random_bytes<const N: usize>() -> [u8; N] {
 /// Bytes em hexadecimal minúsculo.
 pub fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// Id aleatório de 12 letras base32 (`newId`).
+pub fn new_id() -> String {
+    sky_identity::b32_60(&random_bytes::<12>())
 }

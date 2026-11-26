@@ -6052,6 +6052,7 @@ dependencies = [
  "base64 0.22.1",
  "brotli",
  "flate2",
+ "futures-util",
  "getrandom 0.4.3",
  "hmac 0.12.1",
  "indexmap",

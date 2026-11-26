@@ -353,7 +353,7 @@ impl IdentityRegistry {
         r
     }
 
-    fn read_valid(&mut self, p: &PathBuf) -> (bool, bool) {
+    fn read_valid(&mut self, p: &std::path::Path) -> (bool, bool) {
         match read_json_file(p) {
             Ok(None) => (false, false),
             Ok(Some(obj)) => (true, self.parse(&obj)),

@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Uma opção: nome da variável, valor padrão e explicação (vai como comentário no arquivo).
+#[derive(Debug)]
 pub struct Opt {
     pub var: &'static str,
     pub def: &'static str,
