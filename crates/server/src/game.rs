@@ -438,6 +438,9 @@ pub struct Game {
     pub reports: crate::moderation::Reports,
     pub webhook: String,
     pub video_idle_ms: u64,
+    pub voice: crate::voice::VoiceCfg,
+    pub vperf: crate::voice::VoicePerf,
+    pub metrics: crate::metrics::Metrics,
     pub radio: std::sync::Arc<crate::radio::Radio>,
     /// Trabalho que volta de uma tarefa assíncrona (a sondagem da rádio) para rodar com o jogo travado.
     pub later: Option<tokio::sync::mpsc::UnboundedSender<Later>>,
@@ -544,6 +547,38 @@ impl Game {
             hook_at: 0,
             radio: crate::radio::Radio::new(cfg.int("DJ_MAX_HUBS", 10, 0, 1000).unwrap_or(10) as usize),
             later: None,
+            voice: crate::voice::VoiceCfg {
+                turn_urls: cfg
+                    .str("TURN_URL", "")
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|u| !u.is_empty())
+                    .filter(|u| {
+                        let ok = (u.to_lowercase().starts_with("turn:") || u.to_lowercase().starts_with("turns:"))
+                            && !u.contains(char::is_whitespace);
+                        if !ok {
+                            tracing::warn!("TURN_URL ignorado (use turn: ou turns:): {u}");
+                        }
+                        ok
+                    })
+                    .map(str::to_owned)
+                    .collect(),
+                turn_user: cfg.str("TURN_USER", ""),
+                turn_pass: cfg.str("TURN_PASS", ""),
+                turn_secret: cfg.str("TURN_SECRET", ""),
+                turn_ttl: cfg.int("TURN_TTL", 3600, 60, 86400).unwrap_or(3600) as u64,
+                turn_label: {
+                    let l: String = cfg
+                        .str("TURN_LABEL", "skyke3d")
+                        .chars()
+                        .map(|c| if c.is_ascii_alphanumeric() || "_.-".contains(c) { c } else { '-' })
+                        .take(64)
+                        .collect();
+                    if l.is_empty() { "skyke3d".into() } else { l }
+                },
+            },
+            vperf: crate::voice::VoicePerf::default(),
+            metrics: crate::metrics::Metrics::new(&cfg.data_file("RECORDS_FILE", "records.json")),
             video_idle_ms: cfg.int("VIDEO_IDLE_MS", 180_000, 500, 3_600_000).unwrap_or(180_000) as u64,
             hook_n: 0,
             mute_salt: crate::random_bytes::<16>(),
@@ -892,7 +927,7 @@ impl Game {
 
     fn vcodec_sync(&mut self, code: &str) {
         let Some(r) = self.rooms.get(code) else { return };
-        let o = !r.players.values().any(|p| !p.bot && p.online && p.vop == Some(false));
+        let o = !r.players.values().any(|p| !p.bot && p.vop == Some(false));
         if o == r.vopus {
             return;
         }
@@ -957,22 +992,11 @@ impl Game {
         }
     }
 
-    fn ice_cfg(&self) -> Value {
-        if self.set.voice_ws {
-            return json!({"iceServers": [], "voice": true, "ws": true});
-        }
-        if self.set.voice_privacy == "relay" {
-            json!({"iceServers": [], "policy": "relay", "voice": false, "reason": "turn"})
-        } else {
-            json!({"iceServers": [{"urls": "stun:stun.l.google.com:19302"}], "voice": true})
-        }
-    }
-
     fn join_payload(&self, code: &str, pid: &str, resume: bool) -> Value {
         let Some(r) = self.rooms.get(code) else { return Value::Null };
         let Some(me) = r.players.get(pid) else { return Value::Null };
         let mut o = json!({
-            "t": "joined", "ver": VERSION, "url": self.set.public_url, "ice": self.ice_cfg(), "vopus": r.vopus, "id": me.id,
+            "t": "joined", "ver": VERSION, "url": self.set.public_url, "ice": self.ice_config(), "vopus": r.vopus, "id": me.id,
             "code": r.code, "style": r.style, "host": r.host, "want": r.want, "max": self.set.max_per_room,
             "players": r.players.values().map(|p| self.pub_of(p)).collect::<Vec<_>>(), "kar": self.kq(code),
             "kl": r.kar_end.saturating_sub(crate::now()), "turn": r.kar_turn, "token": me.token, "rk": me.rk,
@@ -1028,6 +1052,9 @@ impl Game {
         let jp = self.join_payload(code, &id, false);
         self.send(cid, &jp);
         self.media_greet(cid, code);
+        let (h, n) = (self.humans_online() as f64, self.rooms.len() as f64);
+        self.metrics.up("humans", h);
+        self.metrics.up("rooms", n);
         let pj = self.rooms.get(code).and_then(|r| r.players.get(&id)).map(|p| self.pub_of(p)).unwrap_or(Value::Null);
         self.bc(code, &json!({"t": "pj", "p": pj}), None);
         if let Some(p) = self.rooms.get_mut(code).and_then(|r| r.players.get_mut(&id)) {
@@ -1456,14 +1483,9 @@ impl Game {
             self.close_policy(cid, "Muitas mensagens. A conexão foi encerrada.", "flood");
             return;
         }
-        if c.me.is_some() && !self.voice_in(cid, raw) {
+        if c.me.is_some() && !self.voice_frame(cid, raw) {
             self.violation(cid);
         }
-    }
-
-    /// Voz pelo WebSocket: por enquanto só confere o formato (o repasse vem com `voicews`).
-    fn voice_in(&mut self, _cid: u64, raw: &[u8]) -> bool {
-        !raw.is_empty()
     }
 
     fn handle(&mut self, cid: u64, m: Value) {
@@ -1701,7 +1723,7 @@ impl Game {
                 self.bc(&code, &json!({"t": "speak", "id": me, "v": v}), Some(cid));
             }
             "ice" => {
-                let ice = self.ice_cfg();
+                let ice = self.ice_config();
                 self.send(cid, &json!({"t": "ice", "ice": ice}));
             }
             "vlisten" => {
@@ -1760,6 +1782,7 @@ impl Game {
                 self.karaoke_msg(cid, t, m, &code, &me)
             }
             "dj" | "djstop" => self.dj_msg(cid, t, m, &code, &me),
+            "sig" => self.voice_sig(&code, &me, m),
             "report" => {
                 let mut r = self.report_new(&code, &me, m);
                 r["t"] = json!("rep");
@@ -1903,6 +1926,7 @@ impl Game {
         }
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
         self.perf.tlast = ms;
+        self.metrics.tick_done(ms);
         if ms > 50.0 {
             self.perf.slow += 1;
         }
@@ -1971,12 +1995,16 @@ impl Game {
         self.gifts.flush();
         self.pets.flush();
         self.reports.write();
+        self.metrics.write();
         self.cook.flush();
         self.badges.flush();
     }
 
     /// Números do painel `/status.json` (`stats`).
-    pub fn stats(&self) -> Value {
+    pub fn stats(&mut self) -> Value {
+        let mut fraude = self.guard.report();
+        fraude["trafego"] = json!({});
+        let resources = self.resource_stats();
         let (mut humans, mut bots) = (0, 0);
         let mut styles = serde_json::Map::new();
         for r in self.rooms.values() {
@@ -1998,18 +2026,29 @@ impl Game {
             "server": "rust", "version": VERSION, "rooms": self.rooms.len(), "maxRooms": self.set.max_rooms,
             "maxPerRoom": self.set.max_per_room,
             "capacity": self.capacity_view(self.set.max_rooms, self.set.max_per_room),
-            "voice": {"transport": if self.set.voice_ws { "ws" } else { "webrtc" }, "privacy": self.set.voice_privacy, "on": self.set.voice_ws, "turn": false},
+            "voice": {"transport": if self.set.voice_ws { "ws" } else { "webrtc" }, "privacy": self.set.voice_privacy, "on": self.voice_on(), "turn": self.voice.turn_ok()},
             "humans": humans, "bots": bots, "karaoke": 0, "video": 0, "styles": styles, "connections": self.conns.len(),
             "identity": identity, "security": self.seclog.stats(),
             "uptime": (crate::now() - self.started) / 1000,
+            "peak": {"rooms": self.metrics.peak.0, "humans": self.metrics.peak.1}, "records": self.metrics.records_json(),
+            "history": self.metrics.hist.iter().cloned().collect::<Vec<_>>(), "resources": resources,
             "abuse": {
                 "bans": self.bm.bans.len(),
                 "rejections": {"http429": self.abuse.r429, "origem": self.abuse.r403, "ban": self.abuse.r_ban},
                 "ticket": {"falhas": self.abuse.ticket, "pow": self.abuse.pow, "mode": self.set.ticket_mode, "maxBits": self.set.pow_max, "rate": self.set.ticket_rate},
+                "fraude": fraude,
+                "topConns": self.top_conns(),
                 "limits": {"perip": self.set.perip, "peripRate": self.set.perip_rate, "peripRoom": self.set.perip_room, "globalRate": self.set.global_rate, "http": self.set.http_rate, "maxBots": self.set.maxbots, "ban": self.bm.on}
             },
-            "perf": {"tick": {"last": self.perf.tlast, "slow": self.perf.slow, "budget": 100}, "msgs": {"inTotal": self.perf.in_t, "outTotal": self.perf.out_t}, "buffer": {"terminated": self.perf.bp}}
+            "perf": self.perf_stats()
         })
+    }
+
+    /// IPs com mais conexões (só o ID curto).
+    fn top_conns(&self) -> Value {
+        let mut v: Vec<(&String, &usize)> = self.conns_per_ip.iter().collect();
+        v.sort_by(|a, b| b.1.cmp(a.1));
+        Value::Array(v.into_iter().take(10).map(|(ip, n)| json!([self.bm.host_id(ip), n])).collect())
     }
 
     pub fn humans_online(&self) -> usize {

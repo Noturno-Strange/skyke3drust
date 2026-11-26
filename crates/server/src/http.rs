@@ -444,6 +444,28 @@ fn status(app: &App, ip: &str, path: &str, h: &HeaderMap, head: bool) -> Respons
     if let Err(r) = status_auth(app, &mut g, ip, h) {
         return r;
     }
+    if path == "/status/players.json" && !head {
+        let body = g.mod_players(ip).to_string();
+        let gz = h
+            .get("accept-encoding")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|a| a.split(',').any(|x| x.trim().split(';').next() == Some("gzip")));
+        let mut r = json_resp(site, 200, &Value::Null, false);
+        if body.len() > 2048 && gz {
+            use std::io::Write;
+            let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            if e.write_all(body.as_bytes()).is_ok()
+                && let Ok(z) = e.finish()
+            {
+                *r.body_mut() = Body::from(z);
+                r.headers_mut().insert("Content-Encoding", axum::http::HeaderValue::from_static("gzip"));
+                r.headers_mut().insert("Vary", axum::http::HeaderValue::from_static("Accept-Encoding"));
+                return r;
+            }
+        }
+        *r.body_mut() = Body::from(body);
+        return r;
+    }
     let v = match path {
         "/status/players.json" => g.mod_players(ip),
         "/status/reports.json" => g.reports_json(),

@@ -24,6 +24,7 @@ pub mod identity_ws;
 pub mod levels;
 pub mod limits;
 pub mod media;
+pub mod metrics;
 pub mod moderation;
 pub mod names;
 pub mod netutil;
@@ -37,6 +38,7 @@ pub mod radio;
 pub mod seclog;
 pub mod social;
 pub mod validate;
+pub mod voice;
 pub mod web;
 
 /// Agora em milissegundos desde 1970 (`Date.now()`).

@@ -51,12 +51,9 @@ fn settings(cfg: &Config) -> Settings {
         let m = if m.is_empty() { if prod { "enforce".into() } else { "warn".to_owned() } } else { m };
         if m == "off" || m == "enforce" { m } else { "warn".into() }
     };
-    let voice = cfg.str("VOICE_TRANSPORT", "").trim().to_lowercase();
-    let voice_ws = match voice.as_str() {
-        "" | "ws" | "websocket" => true,
-        "webrtc" => false,
-        _ => fail(&format!("VOICE_TRANSPORT inválido: \"{voice}\". Valores aceitos: ws ou webrtc (padrão: ws).")),
-    };
+    let voice_ws =
+        env_choice(cfg, "VOICE_TRANSPORT", "ws", &[("ws", "ws"), ("websocket", "ws"), ("webrtc", "webrtc")]) == "ws";
+    let voice_privacy = env_choice(cfg, "VOICE_PRIVACY", "relay", &[("relay", "relay"), ("direct", "direct")]);
     let grace_h = int("IDENTITY_GRACE_HOURS", 0, 0, 168);
     Settings {
         port: int("PORT", 3000, 0, 65535) as u16,
@@ -90,14 +87,30 @@ fn settings(cfg: &Config) -> Settings {
             as u64,
         passkeys: cfg.on("PASSKEYS", true),
         voice_ws,
-        voice_privacy: if cfg.str("VOICE_PRIVACY", "relay").to_lowercase() == "direct" {
-            "direct".into()
-        } else {
-            "relay".into()
-        },
+        voice_privacy,
         status_token: cfg.str("STATUS_TOKEN", ""),
         raw_perip: int("RAW_PERIP", 40, 4, 100_000) as usize,
     }
+}
+
+/// Variável com lista fechada de valores (`envChoice`): valor desconhecido para o servidor e diz o que é aceito.
+fn env_choice(cfg: &Config, name: &str, def: &str, choices: &[(&str, &str)]) -> String {
+    let Some(raw) = cfg.raw(name).filter(|r| !r.trim().is_empty()) else { return def.into() };
+    let v = raw.trim().to_lowercase();
+    if let Some((_, c)) = choices.iter().find(|(k, _)| *k == v) {
+        return (*c).into();
+    }
+    let mut vals: Vec<&str> = Vec::new();
+    for (_, c) in choices {
+        if !vals.contains(c) {
+            vals.push(c);
+        }
+    }
+    fail(&format!(
+        "{name} inválido: \"{}\". Valores aceitos: {} (padrão: {def}).",
+        raw.chars().take(40).collect::<String>(),
+        vals.join(" ou ")
+    ))
 }
 
 fn public_host(h: &str) -> bool {
@@ -348,9 +361,15 @@ async fn main() {
     let a = app.clone();
     tokio::spawn(async move {
         let mut i = tokio::time::interval(Duration::from_millis(10));
+        i.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut last = std::time::Instant::now();
         loop {
             i.tick().await;
-            lock(&a).timers(sky_server::now());
+            let lag = last.elapsed().as_secs_f64() * 1000.0 - 10.0;
+            last = std::time::Instant::now();
+            let mut g = lock(&a);
+            g.metrics.lag(lag);
+            g.timers(sky_server::now());
         }
     });
     let a = app.clone();
@@ -365,6 +384,13 @@ async fn main() {
             g.tick(now);
             if n % 10 == 0 {
                 g.slow_tick(now);
+                g.perf_second();
+            }
+            if n % 50 == 0 || n == 1 {
+                g.records_sample();
+            }
+            if n % 150 == 0 {
+                g.history_sample();
             }
             if n % 100 == 0 {
                 g.soc_tick();
@@ -390,6 +416,14 @@ async fn main() {
     let listener =
         tokio::net::TcpListener::bind(bind).await.unwrap_or_else(|e| fail(&format!("erro no servidor: {e}")));
     let port = listener.local_addr().map_or(set.port, |a| a.port());
+    {
+        let g = lock(&app);
+        if !g.set.voice_ws && g.set.voice_privacy == "relay" && !g.voice.turn_ok() {
+            eprintln!(
+                "Voz desligada: VOICE_PRIVACY=relay exige um servidor TURN (TURN_URL + TURN_SECRET). Para voz direta, sem esconder o IP, use VOICE_PRIVACY=direct."
+            );
+        }
+    }
     println!(
         "Skyke3D {} — escutando em {}:{port}",
         if set.prod { format!("em produção: {}", set.public_url) } else { "em desenvolvimento".into() },
@@ -399,6 +433,46 @@ async fn main() {
         println!(
             "Aberto para loopback, rede privada, CGNAT e *.ts.net. Defina PUBLIC_URL=https://seu-dominio para produção."
         );
+    }
+    {
+        let g = lock(&app);
+        if g.set.status_token.len() >= 12 {
+            println!("Painel de status ativo em /status (acesso por token).");
+        }
+        if g.set.ticket_mode != "off" {
+            let pow = if g.set.ticket_mode == "enforce" && g.set.pow_max > 0 {
+                format!(" (PoW até {} bits)", g.set.pow_max)
+            } else {
+                " (sem PoW)".into()
+            };
+            println!("Ticket de admissão: {}{pow}.", g.set.ticket_mode);
+        }
+        if g.bm.on {
+            let f = cfg.data_file("BAN_FILE", "bans.json");
+            println!("Banimento progressivo ativo ({}).", if f.is_empty() { "somente memória".into() } else { f });
+        }
+        if g.set.global_rate == 0 {
+            eprintln!("Limite global de admissões desativado (GLOBAL_RATE=0).");
+        }
+        let turn_on = g.voice.turn_ok();
+        if g.set.voice_ws {
+            println!(
+                "Voz pelo WebSocket (VOICE_TRANSPORT=ws): o servidor repassa o áudio, sem TURN.{}",
+                if turn_on {
+                    " O TURN configurado fica sem uso (só vale com VOICE_TRANSPORT=webrtc); pode ser desligado."
+                } else {
+                    ""
+                }
+            );
+        } else if turn_on {
+            println!(
+                "Voz pela malha WebRTC; TURN configurado ({}).",
+                if g.voice.turn_secret.is_empty() { "credenciais estáticas" } else { "credenciais temporárias" }
+            );
+        }
+        if g.set.http_rate == 0 {
+            eprintln!("Limite HTTP por IP desativado (HTTP_RATE=0).");
+        }
     }
     println!(
         "{} · cliente do navegador em {} · digite help para ver os comandos.",
