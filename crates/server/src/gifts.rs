@@ -206,7 +206,7 @@ impl Gifts {
 
     /// `can(de, tipo, item)`: o servidor confere que quem envia produziu o item.
     pub fn send(&mut self, from: &str, to: &str, kind: &str, item: &str, name: &str, can: bool) -> Value {
-        let mut no = |s: &mut Self, reason: &str, wait: Option<i64>| {
+        let no = |s: &mut Self, reason: &str, wait: Option<i64>| {
             s.refused += 1;
             let mut o = json!({"ok": false, "reason": reason});
             if let Some(w) = wait {

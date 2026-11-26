@@ -26,6 +26,8 @@ pub mod limits;
 pub mod names;
 pub mod netutil;
 pub mod persist;
+pub mod pet_genes;
+pub mod pets;
 pub mod playerdata;
 pub mod profanity;
 pub mod pubprofile;

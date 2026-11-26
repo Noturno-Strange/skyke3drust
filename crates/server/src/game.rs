@@ -424,6 +424,7 @@ pub struct Game {
     pub badges: crate::badges::Badges,
     pub health: crate::health::Health,
     pub gifts: crate::gifts::Gifts,
+    pub pets: crate::pets::Pets,
     health_seen: HashMap<String, String>,
     mute_salt: [u8; 16],
     tick_n: u64,
@@ -516,6 +517,7 @@ impl Game {
             health: crate::health::Health::new(&cfg.data_file("HEALTH_FILE", "health.json")),
             health_seen: HashMap::new(),
             gifts: crate::gifts::Gifts::new(&cfg.data_file("GIFTS_FILE", "gifts.json")),
+            pets: crate::pets::Pets::new(&cfg.data_file("PETS_FILE", "pets.json")),
             mute_salt: crate::random_bytes::<16>(),
             tick_n: 0,
             started: crate::now(),
@@ -1717,6 +1719,7 @@ impl Game {
             }
             "healthget" | "medcraft" | "medheal" => self.health_msg(cid, t, m, &code, &me),
             "giftget" | "giftsee" | "giftsend" | "giftdel" => self.gift_msg(cid, t, m),
+            "petget" | "petadopt" | "petact" | "petdress" | "petrel" | "petsocial" => self.pet_msg(cid, t, m),
             "freq" => self.soc_request(cid, m["to"].as_str().unwrap_or("")),
             "facc" => self.soc_accept(cid, m["to"].as_str().unwrap_or("")),
             "finv" => self.soc_invite(cid, m["to"].as_str().unwrap_or("")),
@@ -1868,6 +1871,7 @@ impl Game {
         self.farm.tick(now);
         self.health.tick_file(now);
         self.gifts.tick(now);
+        self.pets.tick(now);
         self.cook.tick(now);
         self.badges.tick(now);
         let settled = std::mem::take(&mut self.identity.settled);
@@ -1880,6 +1884,7 @@ impl Game {
 
     pub fn ten_minutes(&mut self) {
         self.pubp.sweep();
+        self.pets.sweep();
     }
 
     pub fn minute(&mut self, now: u64) {
@@ -1916,6 +1921,7 @@ impl Game {
         self.farm.flush();
         self.health.flush();
         self.gifts.flush();
+        self.pets.flush();
         self.cook.flush();
         self.badges.flush();
     }
@@ -2262,12 +2268,12 @@ impl Game {
     }
 
     /// `/profile.json`: o perfil público com emblemas e o resumo de cada parte do jogo.
-    pub fn profile_json(&self, pid: &str) -> Option<Value> {
+    pub fn profile_json(&mut self, pid: &str) -> Option<Value> {
         let mut pr = self.pub_get(pid)?;
         let mut extra = self.cook.badges_of(pid);
         extra.extend(self.farm.badges_of(pid));
         pr["badges"] = self.badges.of(pid, &pr, &extra);
-        pr["pet"] = Value::Null;
+        pr["pet"] = self.pets.public_of(pid);
         pr["farm"] = self.farm.public_of(pid);
         pr["cook"] = self.cook.public_of(pid);
         pr["health"] = self.health.public_of(pid);
@@ -2485,6 +2491,73 @@ impl Game {
                 for w in targets {
                     self.send(w, &json!({"t": "giftin", "n": gift["n"], "k": gift["k"], "i": gift["i"], "at": gift["at"], "unseen": unseen}));
                 }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Game {
+    /// Mascote: só o dono autenticado mexe; visitas só a quem tem perfil público.
+    fn pet_msg(&mut self, cid: u64, t: &str, m: &Value) {
+        const MSG: &str = "Entre com sua identidade para ter um mascote.";
+        if t == "petsocial" {
+            let Some(id) = self.conns.get(&cid).filter(|c| c.ident_scope == "primary").map(|c| c.ident_id.clone())
+            else {
+                return self.send(cid, &json!({"t": "err", "scope": "petsocial", "msg": "Entre com sua identidade para visitar mascotes."}));
+            };
+            let (to, k) = (m["to"].as_str().unwrap_or(""), m["k"].as_str().unwrap_or(""));
+            let r = if self.pubp.has(to) {
+                self.pets.visit(to, &pid_of(&id), k)
+            } else {
+                json!({"ok": false, "reason": "none"})
+            };
+            return self.send(
+                cid,
+                &json!({
+                    "t": "petsocial", "to": to, "k": k, "ok": r["ok"], "reason": r["reason"].as_str().unwrap_or(""),
+                    "wait": r["wait"].as_f64().unwrap_or(0.0), "counts": r["counts"]
+                }),
+            );
+        }
+        let pid = self.owner_of(cid, "pet", MSG);
+        if pid.is_empty() {
+            return;
+        }
+        match t {
+            "petget" => {
+                let pet = self.pets.view(&pid);
+                self.send(cid, &json!({"t": "pet", "pet": pet}));
+            }
+            "petadopt" => {
+                let name = crate::profanity::censor(m["name"].as_str().unwrap_or(""));
+                let r = self.pets.adopt(&pid, &name);
+                let out = if r["ok"] == true {
+                    json!({"t": "pet", "pet": r["pet"], "fresh": 1})
+                } else {
+                    json!({"t": "pet", "pet": null, "err": r["reason"], "wait": r["wait"].as_f64().unwrap_or(0.0)})
+                };
+                self.send(cid, &out);
+            }
+            "petact" => {
+                let rid = m["rid"].as_str().unwrap_or("");
+                let mut r = self.pets.act(&pid, m["a"].as_str().unwrap_or(""), rid);
+                r["t"] = json!("petres");
+                r["rid"] = json!(rid);
+                self.send(cid, &r);
+            }
+            "petdress" => {
+                let r = self.pets.dress(&pid, m["c"].as_i64().unwrap_or(-1));
+                let out = if r["ok"] == true {
+                    json!({"t": "pet", "pet": r["pet"]})
+                } else {
+                    json!({"t": "petres", "ok": false, "reason": r["reason"]})
+                };
+                self.send(cid, &out);
+            }
+            "petrel" => {
+                let ok = self.pets.release(&pid)["ok"] == true;
+                self.send(cid, &json!({"t": "pet", "pet": null, "released": if ok { 1 } else { 0 }}));
             }
             _ => {}
         }
