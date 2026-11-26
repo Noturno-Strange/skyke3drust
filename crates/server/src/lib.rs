@@ -23,6 +23,7 @@ pub mod identity;
 pub mod identity_ws;
 pub mod levels;
 pub mod limits;
+pub mod listener;
 pub mod media;
 pub mod metrics;
 pub mod moderation;
@@ -40,6 +41,7 @@ pub mod social;
 pub mod validate;
 pub mod voice;
 pub mod web;
+pub mod webauthn;
 
 /// Agora em milissegundos desde 1970 (`Date.now()`).
 pub fn now() -> u64 {

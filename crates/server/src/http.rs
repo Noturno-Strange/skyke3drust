@@ -78,9 +78,14 @@ fn in_net(ip: IpAddr, net: (IpAddr, u8)) -> bool {
     }
 }
 
+/// O IP está numa das redes de proxies confiáveis?
+pub fn trusted_in(list: &[(IpAddr, u8)], ip: &str) -> bool {
+    ip.parse::<IpAddr>().is_ok_and(|a| list.iter().any(|n| in_net(a, *n)))
+}
+
 impl App {
     fn trusted(&self, ip: &str) -> bool {
-        ip.parse::<IpAddr>().is_ok_and(|a| self.trust.iter().any(|n| in_net(a, *n)))
+        trusted_in(&self.trust, ip)
     }
 
     /// IP do cliente (atrás de proxy confiável, o do `X-Forwarded-For`).

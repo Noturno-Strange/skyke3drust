@@ -458,21 +458,221 @@ impl Game {
         true
     }
 
-    /// Passkeys: por enquanto o servidor Rust responde que estão desligadas (a verificação WebAuthn vem depois).
-    fn passkey_msg(&mut self, cid: u64, t: &str, m: &Value) {
-        let _ = (PK_FAIL_MAX, PK_FAIL_MS, m);
-        if t == "pklist" {
-            let Some(v) =
-                self.auth.verify_token(&mut self.identity, m["token"].as_str().unwrap_or(""), Some("passkey"))
-            else {
-                return self.id_err(cid, t, "session", None, None);
-            };
-            if v.scope != "primary" {
-                return self.id_err(cid, t, "scope", None, None);
-            }
-            let list = self.identity.passkeys(&v.id);
-            return self.send(cid, &json!({"t": "idok", "op": "pklist", "id": v.id, "list": list, "on": false}));
+    fn pk_session(&mut self, cid: u64, m: &Value, scope: &str) -> Option<crate::auth::Session> {
+        let Some(v) = self.auth.verify_token(&mut self.identity, m["token"].as_str().unwrap_or(""), Some("passkey"))
+        else {
+            self.id_err(cid, scope, "session", None, None);
+            return None;
+        };
+        if v.scope != "primary" {
+            self.id_err(cid, scope, "scope", None, None);
+            return None;
         }
-        self.id_err(cid, t, "pk-off", None, None);
+        Some(v)
+    }
+
+    /// Passkeys: opções, cadastro, lista, remoção e entrada num aparelho novo.
+    fn passkey_msg(&mut self, cid: u64, t: &str, m: &Value) {
+        let ip = self.ip_of(cid);
+        let origin = self.conns.get(&cid).map(|c| c.page_origin.clone()).unwrap_or_default();
+        let rp = if origin.is_empty() { String::new() } else { crate::webauthn::rp_id_of(&origin) };
+        let s = |k: &str| m[k].as_str().unwrap_or("").to_owned();
+        match t {
+            "pkopt" => {
+                if !self.set.passkeys {
+                    return self.id_err(cid, "pkopt", "pk-off", None, None);
+                }
+                if self.over(&ip, "pkopt", 30, 60000) {
+                    return self.id_err(cid, "pkopt", "rate", None, None);
+                }
+                if rp.is_empty() {
+                    return self.id_err(cid, "pkopt", "pk-origin", None, None);
+                }
+                if m["purpose"] == "reg" {
+                    let Some(v) = self.pk_session(cid, m, "pkopt") else { return };
+                    let ch = self.auth.pk_challenge("reg", &v.id, cid);
+                    if ch["ok"] != true {
+                        return self.id_err(cid, "pkopt", ch["reason"].as_str().unwrap_or("busy"), None, None);
+                    }
+                    let exclude: Vec<Value> = self
+                        .identity
+                        .passkeys(&v.id)
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|p| p["cid"].clone())
+                        .collect();
+                    return self.send(
+                        cid,
+                        &json!({
+                            "t": "pkopt", "purpose": "reg", "challenge": ch["challenge"], "exp": ch["exp"], "rpId": rp,
+                            "user": crate::webauthn::user_handle(&v.id), "exclude": exclude
+                        }),
+                    );
+                }
+                let ch = self.auth.pk_challenge("login", "", cid);
+                if ch["ok"] != true {
+                    return self.id_err(cid, "pkopt", ch["reason"].as_str().unwrap_or("busy"), None, None);
+                }
+                self.send(cid, &json!({"t": "pkopt", "purpose": "login", "challenge": ch["challenge"], "exp": ch["exp"], "rpId": rp}));
+            }
+            "pkreg" => {
+                if !self.set.passkeys {
+                    return self.id_err(cid, "pkreg", "pk-off", None, None);
+                }
+                let Some(v) = self.pk_session(cid, m, "pkreg") else { return };
+                if rp.is_empty() {
+                    return self.id_err(cid, "pkreg", "pk-origin", None, None);
+                }
+                let ch = self.auth.take_pk_challenge(&s("challenge"), "reg", cid, &v.id);
+                if ch["ok"] != true {
+                    return self.id_err(cid, "pkreg", ch["reason"].as_str().unwrap_or("challenge"), None, None);
+                }
+                let r = crate::webauthn::verify_registration(
+                    &origin,
+                    &rp,
+                    &s("challenge"),
+                    &s("cd"),
+                    &s("ad"),
+                    &s("spki"),
+                    m["alg"].as_i64().unwrap_or(0),
+                    &s("cid"),
+                );
+                let cred = match r {
+                    Ok(c) => c,
+                    Err(why) => {
+                        self.seclog.log(
+                            "passkey.add",
+                            Ev { id: &v.id, ip: &ip, ok: Some(false), reason: why, ..Default::default() },
+                        );
+                        return self.id_err(
+                            cid,
+                            "pkreg",
+                            "pk-fail",
+                            Some("O navegador não entregou uma passkey válida. Tente de novo."),
+                            None,
+                        );
+                    }
+                };
+                let a = self.identity.add_passkey(&v.id, &cred, &s("name"));
+                if a["ok"] != true {
+                    return self.id_err(cid, "pkreg", reason(&a), None, None);
+                }
+                let c = s("cid");
+                self.seclog
+                    .log("passkey.add", Ev { id: &v.id, ip: &ip, cred: &c, n: a["n"].as_i64(), ..Default::default() });
+                let list = self.identity.passkeys(&v.id);
+                self.send(cid, &json!({"t": "idok", "op": "pkreg", "id": v.id, "list": list}));
+            }
+            "pklist" => {
+                let Some(v) = self.pk_session(cid, m, "pklist") else { return };
+                let list = self.identity.passkeys(&v.id);
+                let on = self.set.passkeys && !rp.is_empty();
+                self.send(cid, &json!({"t": "idok", "op": "pklist", "id": v.id, "list": list, "on": on}));
+            }
+            "pkdel" => {
+                let Some(v) = self.pk_session(cid, m, "pkdel") else { return };
+                let cids: Vec<String> = if m["all"] == true {
+                    self.identity
+                        .passkeys(&v.id)
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|p| p["cid"].as_str().map(str::to_owned))
+                        .collect()
+                } else {
+                    vec![s("cid")]
+                };
+                for c in cids {
+                    let r = self.identity.remove_passkey(&v.id, &c);
+                    if r["ok"] != true {
+                        return self.id_err(cid, "pkdel", reason(&r), None, None);
+                    }
+                    self.seclog.log(
+                        "passkey.remove",
+                        Ev { id: &v.id, ip: &ip, cred: &c, n: r["n"].as_i64(), ..Default::default() },
+                    );
+                }
+                let list = self.identity.passkeys(&v.id);
+                self.send(cid, &json!({"t": "idok", "op": "pkdel", "id": v.id, "list": list}));
+            }
+            "pklogin" => {
+                if !self.set.passkeys {
+                    return self.id_err(cid, "pklogin", "pk-off", None, None);
+                }
+                if self.over(&ip, "pklogin", 10, 60000) {
+                    return self.id_err(cid, "pklogin", "rate", None, None);
+                }
+                if rp.is_empty() {
+                    return self.id_err(cid, "pklogin", "pk-origin", None, None);
+                }
+                let c = s("cid");
+                let fail = |g: &mut Game, id: &str, why: &str| {
+                    if g.hit_count(&ip, "idfail", 20, 600_000).count == 21 {
+                        g.ban_strike(&ip, "passkey");
+                    }
+                    if !id.is_empty() {
+                        g.hit_count("@pk", id, PK_FAIL_MAX, PK_FAIL_MS);
+                    }
+                    let ev = if why == "clone" { "passkey.clone" } else { "passkey.fail" };
+                    let cred = if id.is_empty() { "" } else { c.as_str() };
+                    g.seclog.log(ev, Ev { id, ip: &ip, ok: Some(false), reason: why, cred, ..Default::default() });
+                    g.id_err(cid, "pklogin", "pk-fail", None, None);
+                };
+                let ch = self.auth.take_pk_challenge(&s("challenge"), "login", cid, "");
+                if ch["ok"] != true {
+                    return self.id_err(cid, "pklogin", ch["reason"].as_str().unwrap_or("challenge"), None, None);
+                }
+                let Some((id, cred)) = self.identity.passkey_by_cid(&c) else { return fail(self, "", "unknown") };
+                if self.count_hits("@pk", &id, PK_FAIL_MS) >= PK_FAIL_MAX {
+                    self.seclog.log(
+                        "passkey.fail",
+                        Ev { id: &id, ip: &ip, ok: Some(false), reason: "locked", ..Default::default() },
+                    );
+                    return self.id_err(cid, "pklogin", "pk-locked", None, None);
+                }
+                let sc = match crate::webauthn::verify_assertion(
+                    &origin,
+                    &rp,
+                    &s("challenge"),
+                    &s("cd"),
+                    &s("ad"),
+                    &s("sig"),
+                    &cred.pk,
+                    cred.alg,
+                    cred.sc,
+                ) {
+                    Ok(sc) => sc,
+                    Err(why) => return fail(self, &id, why),
+                };
+                self.auth.revoke_sessions(&id);
+                let a = self.identity.attach_device(&id, &c, sc, &s("pk"));
+                if a["ok"] != true {
+                    return self.id_err(cid, "pklogin", reason(&a), None, None);
+                }
+                self.seclog.log("passkey.login", Ev { id: &id, ip: &ip, cred: &c, ..Default::default() });
+                let cancelled = a["cancelled"] == true;
+                if cancelled {
+                    self.seclog
+                        .log("recovery.cancel", Ev { id: &id, ip: &ip, reason: "passkey", ..Default::default() });
+                }
+                let rec = self.identity.get(&id);
+                let fresh = self.auth.issue(&mut self.identity, &id, "primary");
+                let (Some(rec), Some(fresh)) = (rec, fresh) else {
+                    return self.id_err(cid, "pklogin", "io", None, None);
+                };
+                self.set_ident(cid, &id, rec.gen_, rec.epoch, "primary");
+                self.close_identity_conns(&id, Some(cid), None);
+                let mut out = json!({
+                    "t": "idok", "op": "pklogin", "id": id, "gen": rec.gen_, "rgen": rec.rgen, "epoch": rec.epoch, "rpk": rec.rpk,
+                    "token": fresh["token"], "exp": fresh["exp"]
+                });
+                if cancelled {
+                    out["cancelled"] = json!(true);
+                }
+                self.send(cid, &out);
+            }
+            _ => {}
+        }
     }
 }

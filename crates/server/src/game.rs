@@ -1465,6 +1465,7 @@ impl Game {
             }
         }
         self.handle(cid, m);
+        self.drain_settled();
     }
 
     /// Mensagem binária (voz).
@@ -1946,17 +1947,22 @@ impl Game {
         self.reports.tick(now);
         self.cook.tick(now);
         self.badges.tick(now);
+        self.drain_settled();
+    }
+
+    pub fn ten_minutes(&mut self) {
+        self.pubp.sweep();
+        self.pets.sweep();
+    }
+
+    /// Recuperações que venceram a carência: caem as sessões e as conexões da chave antiga, na hora (`onSettle`).
+    pub fn drain_settled(&mut self) {
         let settled = std::mem::take(&mut self.identity.settled);
         for id in settled {
             self.seclog.log("recovery.apply", crate::seclog::Ev { id: &id, ..Default::default() });
             self.auth.revoke_sessions(&id);
             self.close_identity_conns(&id, None, Some("primary"));
         }
-    }
-
-    pub fn ten_minutes(&mut self) {
-        self.pubp.sweep();
-        self.pets.sweep();
     }
 
     pub fn minute(&mut self, now: u64) {

@@ -480,11 +480,12 @@ async fn main() {
         root.display()
     );
     let a = app.clone();
-    let router =
-        axum::Router::new().fallback(move |ConnectInfo(remote): ConnectInfo<SocketAddr>, req: Request<Body>| {
+    let router = axum::Router::new().fallback(
+        move |ConnectInfo(remote): ConnectInfo<sky_server::listener::Peer>, req: Request<Body>| {
             let a = a.clone();
-            async move { sky_server::http::handle(a, remote, req).await }
-        });
+            async move { sky_server::http::handle(a, remote.0, req).await }
+        },
+    );
     let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
     // console do operador
     let a = app.clone();
@@ -515,12 +516,10 @@ async fn main() {
         let _ = tx.send(true);
     });
     let a = app.clone();
-    // como o Node (noDelay): mensagens pequenas saem na hora, sem esperar o algoritmo de Nagle
-    use axum::serve::ListenerExt;
-    let listener = listener.tap_io(|tcp| {
-        let _ = tcp.set_nodelay(true);
-    });
-    let server = axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
+    let trust_list = parse_trust(&cfg.raw("TRUST_PROXY").unwrap_or_else(|| "127.0.0.1,::1".into()));
+    let trusted = std::sync::Arc::new(move |ip: &str| sky_server::http::trusted_in(&trust_list, ip));
+    let listener = sky_server::listener::Guarded::new(listener, set.raw_perip, trusted);
+    let server = axum::serve(listener, router.into_make_service_with_connect_info::<sky_server::listener::Peer>())
         .with_graceful_shutdown(async move {
             let _ = stop_rx.wait_for(|v| *v).await;
             shutdown(&a);
