@@ -149,7 +149,13 @@ pub fn spawn(commands: &mut Commands, t: &Theme, f: &UiFonts, cat: &EditorCatalo
     let exit = button(commands, t, f, "🚪", false);
     commands.entity(exit).observe(|_: On<Activate>, mut next: ResMut<NextState<Screen>>| next.set(Screen::Menu));
 
-    commands.entity(bar).add_children(&[emo, pl, inv, exit]);
+    // ⚙️ ajustes
+    let set = button(commands, t, f, "⚙️", false);
+    commands.entity(set).observe(|_: On<Activate>, mut q: Query<&mut Node, With<crate::settings::SettingsPanel>>| {
+        crate::settings::toggle(&mut q);
+    });
+
+    commands.entity(bar).add_children(&[emo, pl, inv, set, exit]);
     commands.entity(root).add_children(&[ep, pp]);
 }
 

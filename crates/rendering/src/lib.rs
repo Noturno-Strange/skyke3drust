@@ -301,6 +301,15 @@ impl ToonMaterial {
         self
     }
 
+    /// Ajustes → Brilho: multiplica a luz do mundo (hemisfério, principal e preenchimento), de 0,6 a 1,6.
+    pub fn set_brightness(&mut self, b: f32) {
+        self.params.hemi_sky.w = b;
+    }
+
+    pub fn brightness(&self) -> f32 {
+        self.params.hemi_sky.w
+    }
+
     /// Versão "cor brilhante" do material (`glossyOf`): `k` = 0,9 no corpo, 0,35 no cabelo.
     pub fn glossy(mut self, k: f32) -> Self {
         self.params.flags |= flags::GLOSS;

@@ -19,6 +19,7 @@ mod menu;
 mod net;
 mod player;
 mod recovery;
+mod settings;
 mod shot;
 mod social;
 mod state;
@@ -73,6 +74,7 @@ fn main() {
         editor::EditorPlugin,
         recovery::RecoveryPlugin,
         social::SocialPlugin,
+        settings::SettingsPlugin,
     ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))

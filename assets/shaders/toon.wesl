@@ -175,13 +175,16 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @locatio
         let shadow = key_shadow(in.world_position, n, in.position.xy);
         var direct = ramp(dot(n, p.key_dir.xyz)) * p.key_color.rgb * shadow;
         direct += ramp(dot(n, p.fill_dir.xyz)) * p.fill_color.rgb;
+        var fire = vec3<f32>(0.0);
         let to_fire = p.fire_pos.xyz - in.world_position.xyz;
         let d = length(to_fire);
         if d > 0.0001 && any(p.fire_color.rgb > vec3<f32>(0.0)) {
             let att = distance_attenuation(d, p.fire_pos.w, p.fire_color.w);
-            direct += ramp(dot(n, to_fire / d)) * p.fire_color.rgb * att;
+            fire = ramp(dot(n, to_fire / d)) * p.fire_color.rgb * att;
         }
-        rgb = (direct + indirect) * lambert + p.emissive.rgb;
+        // Ajustes → Brilho (BRI, 1 = padrão): hemisfério, luz principal e preenchimento; a fogueira não muda
+        let bri = p.hemi_sky.w;
+        rgb = ((direct + indirect) * bri + fire) * lambert + p.emissive.rgb;
         if (p.flags & F_AVATAR) != 0u {
             rgb += diffuse.rgb * 0.42;
         }

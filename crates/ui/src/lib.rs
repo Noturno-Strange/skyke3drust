@@ -16,7 +16,7 @@ pub struct SkyUiPlugin;
 
 impl Plugin for SkyUiPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Theme>().init_resource::<UiFonts>();
+        app.init_resource::<Theme>().init_resource::<UiFonts>().add_systems(PostUpdate, retheme);
     }
 }
 
@@ -99,6 +99,52 @@ impl Theme {
 impl Default for Theme {
     fn default() -> Self {
         Self::new(ThemeKind::Dark)
+    }
+}
+
+/// Tema trocado (Ajustes): cada cor do tema anterior vira a mesma cor do novo, em fundos, bordas e textos.
+fn retheme(
+    theme: Res<Theme>,
+    mut last: Local<Option<Theme>>,
+    mut bg: Query<&mut BackgroundColor>,
+    mut bc: Query<&mut BorderColor>,
+    mut tc: Query<&mut TextColor>,
+) {
+    let new = *theme;
+    let Some(old) = last.replace(new) else { return };
+    if old.kind == new.kind {
+        return;
+    }
+    let pairs = [
+        (old.panel, new.panel),
+        (old.fg, new.fg),
+        (old.accent, new.accent),
+        (old.border, new.border),
+        (old.strong, new.strong),
+        (old.on_accent, new.on_accent),
+        (old.bg, new.bg),
+        (old.start_panel, new.start_panel),
+        (old.start_border, new.start_border),
+        (old.start_accent, new.start_accent),
+    ];
+    let map = |c: Color| pairs.iter().find(|(o, _)| *o == c).map_or(c, |(_, n)| *n);
+    for mut b in &mut bg {
+        let c = map(b.0);
+        if c != b.0 {
+            b.0 = c;
+        }
+    }
+    for mut b in &mut bc {
+        let n = BorderColor { top: map(b.top), right: map(b.right), bottom: map(b.bottom), left: map(b.left) };
+        if n != *b {
+            *b = n;
+        }
+    }
+    for mut t in &mut tc {
+        let c = map(t.0);
+        if c != t.0 {
+            t.0 = c;
+        }
     }
 }
 

@@ -99,6 +99,10 @@ pub enum ClientMsg {
     Speak {
         v: bool,
     },
+    /// Quantos bots a sala deve ter (só o anfitrião).
+    Bots {
+        n: u32,
+    },
     /// Emoji sobre a cabeça (`i` indexa `EMO` no catálogo).
     Emo {
         i: u32,
