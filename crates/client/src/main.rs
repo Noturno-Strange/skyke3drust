@@ -12,6 +12,7 @@
 mod anim;
 mod args;
 mod backpack;
+mod canvas;
 mod cook;
 mod editor;
 mod farm;
@@ -23,6 +24,8 @@ mod look;
 mod medicine;
 mod menu;
 mod net;
+mod pet;
+mod pet_art;
 mod player;
 mod recovery;
 mod settings;
@@ -89,6 +92,7 @@ fn main() {
         friends::FriendsPlugin,
         medicine::MedicinePlugin,
         gift::GiftPlugin,
+        pet::PetPlugin,
     ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))

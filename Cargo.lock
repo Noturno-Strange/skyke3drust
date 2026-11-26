@@ -5819,6 +5819,7 @@ dependencies = [
  "sky-shared",
  "sky-ui",
  "sky-world",
+ "tiny-skia",
  "tokio",
 ]
 

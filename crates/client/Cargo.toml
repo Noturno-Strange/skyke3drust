@@ -27,6 +27,8 @@ sky-avatars.workspace = true
 sky-persistence.workspace = true
 sky-identity.workspace = true
 sha2.workspace = true
+# desenho 2D dos mascotes (pet-art.js); já vem no build do Linux pelo winit
+tiny-skia = { version = "0.11.4", default-features = false, features = ["std", "simd"] }
 serde.workspace = true
 serde_json.workspace = true
 sky-security.workspace = true
