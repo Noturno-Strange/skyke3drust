@@ -335,6 +335,15 @@ async fn main() {
         trust,
         status_token,
     });
+    // trabalho que volta das tarefas assíncronas (sondagem da rádio do DJ)
+    let (later_tx, mut later_rx) = tokio::sync::mpsc::unbounded_channel::<sky_server::game::Later>();
+    lock(&app).later = Some(later_tx);
+    let a = app.clone();
+    tokio::spawn(async move {
+        while let Some(f) = later_rx.recv().await {
+            f(&mut lock(&a));
+        }
+    });
     // relógios
     let a = app.clone();
     tokio::spawn(async move {

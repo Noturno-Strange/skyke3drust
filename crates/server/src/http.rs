@@ -299,10 +299,24 @@ pub async fn handle(app: Arc<App>, remote: SocketAddr, req: Request<Body>) -> Re
         }
     }
     if path.starts_with("/status/") && path != "/status/players.json" && path != "/status/reports.json" {
-        if method != Method::POST {
-            return plain(site, 405, "405", &[("Allow", "POST".into())], head);
+        let known = [
+            "/status/ban",
+            "/status/unban",
+            "/status/capacity",
+            "/status/report",
+            "/status/badge",
+            "/status/keypass",
+            "/status/recover",
+        ];
+        if known.contains(&path.as_str()) {
+            if method != Method::POST {
+                return plain(site, 405, "405", &[("Allow", "POST".into())], head);
+            }
+            return status_action(&app, &ip, &path, &h, req).await;
         }
-        return plain(site, 404, "404", &[], false);
+    }
+    if path == "/radio" && method != Method::GET {
+        return plain(site, 405, "405", &[("Allow", "GET".into())], head);
     }
     if method != Method::GET && method != Method::HEAD {
         return plain(site, 405, "405", &[("Allow", "GET, HEAD".into())], head);
@@ -366,6 +380,7 @@ pub async fn handle(app: Arc<App>, remote: SocketAddr, req: Request<Body>) -> Re
             head,
         ),
         "/vendor/three-r186.min.js" => send_cached(site, &h, &site.three, head),
+        "/radio" => radio(&app, &ip, &uri, &method, head).await,
         "/farm.json" | "/profile.json" => {
             let mut g = lock(&app);
             let key = if path == "/farm.json" { "farm" } else { "prof" };
@@ -426,8 +441,23 @@ fn status(app: &App, ip: &str, path: &str, h: &HeaderMap, head: bool) -> Respons
         );
     }
     let mut g = lock(app);
+    if let Err(r) = status_auth(app, &mut g, ip, h) {
+        return r;
+    }
+    let v = match path {
+        "/status/players.json" => g.mod_players(ip),
+        "/status/reports.json" => g.reports_json(),
+        _ => g.stats(),
+    };
+    json_resp(site, 200, &v, head)
+}
+
+/// Confere o token do painel; `Err` já é a resposta (401 ou 429).
+#[allow(clippy::result_large_err)]
+fn status_auth(app: &App, g: &mut Game, ip: &str, h: &HeaderMap) -> Result<(), Response<Body>> {
+    let site = &app.site;
     if g.blocked(ip, "sf", 6, 600_000) {
-        return json_resp(site, 429, &json!({"erro": "muitas tentativas"}), false);
+        return Err(json_resp(site, 429, &json!({"erro": "muitas tentativas"}), false));
     }
     let auth = h.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("");
     let t = auth.strip_prefix("Bearer ").unwrap_or("");
@@ -439,14 +469,62 @@ fn status(app: &App, ip: &str, path: &str, h: &HeaderMap, head: bool) -> Respons
     };
     if hm(t) != hm(&app.status_token) {
         g.over(ip, "sf", 999, 600_000);
-        return json_resp(site, 401, &json!({"erro": "não autorizado"}), false);
+        return Err(json_resp(site, 401, &json!({"erro": "não autorizado"}), false));
     }
-    let v = match path {
-        "/status/players.json" => json!({"players": []}),
-        "/status/reports.json" => json!({"reports": [], "webhook": false, "persisted": false}),
-        _ => g.stats(),
+    Ok(())
+}
+
+async fn status_action(app: &App, ip: &str, path: &str, h: &HeaderMap, req: Request<Body>) -> Response<Body> {
+    let site = &app.site;
+    if app.status_token.len() < 12 {
+        return plain(site, 404, "404", &[], false);
+    }
+    {
+        let mut g = lock(app);
+        if let Err(r) = status_auth(app, &mut g, ip, h) {
+            return r;
+        }
+    }
+    let ct = h.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_lowercase();
+    if !ct.starts_with("application/json") || ct[16..].starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
+        return json_resp(site, 415, &json!({"erro": "use application/json"}), false);
+    }
+    let big = || {
+        let mut r = json_resp(site, 413, &json!({"erro": "corpo grande demais"}), false);
+        r.headers_mut().insert("Connection", axum::http::HeaderValue::from_static("close"));
+        r
     };
-    json_resp(site, 200, &v, head)
+    if h.get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .is_some_and(|n| n > 2048)
+    {
+        return big();
+    }
+    let bytes = match axum::body::to_bytes(req.into_body(), 2048).await {
+        Ok(b) => b,
+        Err(e) => {
+            if e.to_string().to_lowercase().contains("length limit") {
+                return big();
+            }
+            return json_resp(site, 400, &json!({"erro": "JSON inválido"}), false);
+        }
+    };
+    let Ok(body) = serde_json::from_slice::<Value>(&bytes) else {
+        return json_resp(site, 400, &json!({"erro": "JSON inválido"}), false);
+    };
+    if !body.is_object() {
+        return json_resp(site, 400, &json!({"erro": "JSON inválido"}), false);
+    }
+    let mut g = lock(app);
+    let preview = path == "/status/capacity" && body["dry"] == true;
+    if if preview { g.over(ip, "sp", 240, 60000) } else { g.over(ip, "sa", 30, 60000) } {
+        g.abuse.r429 += 1;
+        return json_resp(site, 429, &json!({"erro": "muitas ações, aguarde um minuto"}), false);
+    }
+    let trusted = |x: &str| app.trusted(x);
+    let (code, out) = g.status_action(path, &body, ip, &trusted);
+    json_resp(site, code, &out, false)
 }
 
 // ---------- WebSocket ----------
@@ -609,3 +687,57 @@ async fn run_ws(app: Arc<App>, sock: WebSocket, ip: String, origin: String) {
 
 /// O endereço de quem conectou, para o roteador.
 pub type Remote = ConnectInfo<SocketAddr>;
+
+/// `/radio?c=SALA&k=CHAVE`: o áudio do DJ da sala, só para quem está nela (a chave `rk` do jogador).
+async fn radio(app: &App, ip: &str, uri: &str, method: &Method, head: bool) -> Response<Body> {
+    let site = &app.site;
+    if method != Method::GET {
+        return plain(site, 405, "405", &[("Allow", "GET".into())], head);
+    }
+    let (listener, radio) = {
+        let mut g = lock(app);
+        if g.over(ip, "radio", 30, 60000) {
+            g.abuse.r429 += 1;
+            return plain(site, 429, "429", &[("Retry-After", "30".into())], head);
+        }
+        let code = crate::validate::norm_code(&Value::String(query_param(uri, "c").unwrap_or_default()));
+        let rk = crate::validate::norm_token(&Value::String(query_param(uri, "k").unwrap_or_default()));
+        let (Some(code), Some(rk)) = (code, rk) else { return plain(site, 404, "404", &[], false) };
+        let Some(room) = g.rooms.get(&code) else { return plain(site, 404, "404", &[], false) };
+        let who = room.players.values().any(|p| !p.bot && !p.rk.is_empty() && crate::game::token_eq(&p.rk, &rk));
+        let Some((url, _, _)) = room.dj.clone().filter(|_| who) else { return plain(site, 404, "404", &[], false) };
+        let radio = g.radio.clone();
+        (radio.attach(&code, &url), radio)
+    };
+    drop(radio);
+    let Some(mut l) = listener else { return plain(site, 503, "503", &[("Retry-After", "30".into())], false) };
+    // espera a rádio abrir (ou falhar) antes de mandar os cabeçalhos
+    let ct = loop {
+        if let Some(c) = l.ct.borrow().clone() {
+            break c;
+        }
+        if tokio::time::timeout(std::time::Duration::from_secs(20), l.ct.changed()).await.map_or(true, |r| r.is_err()) {
+            break String::new();
+        }
+    };
+    if ct.is_empty() {
+        return Response::builder().status(502).body(Body::empty()).unwrap_or_default();
+    }
+    let rx = std::mem::replace(&mut l.rx, tokio::sync::broadcast::channel(1).1);
+    let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
+        .filter_map(|c| async move { c.ok().map(Ok::<_, std::io::Error>) });
+    // o ouvinte vive enquanto o corpo da resposta estiver sendo lido
+    let stream = futures_util::stream::StreamExt::map(stream, move |x| {
+        let _keep = &l;
+        x
+    });
+    Response::builder()
+        .status(200)
+        .header("Content-Type", ct)
+        .header("Cache-Control", "no-store")
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Accept-Ranges", "none")
+        .header("Referrer-Policy", "no-referrer")
+        .body(Body::from_stream(stream))
+        .unwrap_or_default()
+}

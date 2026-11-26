@@ -277,6 +277,16 @@ pub struct Room {
     pub full_at: u64,
     pub kar_end: u64,
     pub kar_turn: u64,
+    pub vids: IndexMap<String, crate::media::Vid>,
+    pub kar: Vec<crate::media::KarEntry>,
+    pub kar_head: Option<String>,
+    pub kar_at: u64,
+    pub kdur: bool,
+    pub kcap: bool,
+    pub ks: Option<Value>,
+    pub invite_at: u64,
+    /// DJ da sala: (link da rádio, id e nome de quem pôs).
+    pub dj: Option<(String, String, String)>,
     pub chat_log: Vec<Value>,
 }
 
@@ -425,6 +435,14 @@ pub struct Game {
     pub health: crate::health::Health,
     pub gifts: crate::gifts::Gifts,
     pub pets: crate::pets::Pets,
+    pub reports: crate::moderation::Reports,
+    pub webhook: String,
+    pub video_idle_ms: u64,
+    pub radio: std::sync::Arc<crate::radio::Radio>,
+    /// Trabalho que volta de uma tarefa assíncrona (a sondagem da rádio) para rodar com o jogo travado.
+    pub later: Option<tokio::sync::mpsc::UnboundedSender<Later>>,
+    pub hook_at: u64,
+    pub hook_n: u32,
     health_seen: HashMap<String, String>,
     mute_salt: [u8; 16],
     tick_n: u64,
@@ -432,6 +450,9 @@ pub struct Game {
     /// Comandos de operador pedidos pelo console (`stop`).
     pub stopping: bool,
 }
+
+/// Função que roda depois, com o jogo travado.
+pub type Later = Box<dyn FnOnce(&mut Game) + Send>;
 
 pub fn rnd() -> f64 {
     let b = crate::random_bytes::<8>();
@@ -518,6 +539,13 @@ impl Game {
             health_seen: HashMap::new(),
             gifts: crate::gifts::Gifts::new(&cfg.data_file("GIFTS_FILE", "gifts.json")),
             pets: crate::pets::Pets::new(&cfg.data_file("PETS_FILE", "pets.json")),
+            reports: crate::moderation::Reports::new(&cfg.data_file("REPORTS_FILE", "reports.json")),
+            webhook: crate::moderation::webhook_url(&cfg.str("DISCORD_REPORT_WEBHOOK", "")),
+            hook_at: 0,
+            radio: crate::radio::Radio::new(cfg.int("DJ_MAX_HUBS", 10, 0, 1000).unwrap_or(10) as usize),
+            later: None,
+            video_idle_ms: cfg.int("VIDEO_IDLE_MS", 180_000, 500, 3_600_000).unwrap_or(180_000) as u64,
+            hook_n: 0,
             mute_salt: crate::random_bytes::<16>(),
             tick_n: 0,
             started: crate::now(),
@@ -840,6 +868,7 @@ impl Game {
 
     fn destroy_room(&mut self, code: &str) {
         self.rooms.shift_remove(code);
+        self.radio.stop(code);
     }
 
     fn talk_log(&mut self, code: &str, pid: &str, on: bool) {
@@ -891,6 +920,8 @@ impl Game {
         p.online = false;
         p.ready = false;
         p.conn = None;
+        self.stop_video(code, pid);
+        self.kar_drop(code, pid);
         self.stop_speaking(code, pid);
         let Some(r) = self.rooms.get_mut(code) else { return };
         r.players.shift_remove(pid);
@@ -918,6 +949,8 @@ impl Game {
         if was_listening {
             self.bc(code, &json!({"t": "vl", "id": pid, "v": false}), None);
         }
+        self.stop_video(code, pid);
+        self.kar_away(code, pid);
         self.stop_speaking(code, pid);
         if self.rooms.get(code).is_some_and(|r| r.host.as_deref() == Some(pid)) {
             self.host_transfer(code);
@@ -941,7 +974,7 @@ impl Game {
         let mut o = json!({
             "t": "joined", "ver": VERSION, "url": self.set.public_url, "ice": self.ice_cfg(), "vopus": r.vopus, "id": me.id,
             "code": r.code, "style": r.style, "host": r.host, "want": r.want, "max": self.set.max_per_room,
-            "players": r.players.values().map(|p| self.pub_of(p)).collect::<Vec<_>>(), "kar": [],
+            "players": r.players.values().map(|p| self.pub_of(p)).collect::<Vec<_>>(), "kar": self.kq(code),
             "kl": r.kar_end.saturating_sub(crate::now()), "turn": r.kar_turn, "token": me.token, "rk": me.rk,
             "self": self.pub_of(me), "reconnect": self.set.reconnect_ms
         });
@@ -994,6 +1027,7 @@ impl Game {
         self.fit(code);
         let jp = self.join_payload(code, &id, false);
         self.send(cid, &jp);
+        self.media_greet(cid, code);
         let pj = self.rooms.get(code).and_then(|r| r.players.get(&id)).map(|p| self.pub_of(p)).unwrap_or(Value::Null);
         self.bc(code, &json!({"t": "pj", "p": pj}), None);
         if let Some(p) = self.rooms.get_mut(code).and_then(|r| r.players.get_mut(&id)) {
@@ -1062,6 +1096,7 @@ impl Game {
         }
         let jp = self.join_payload(code, &pid, true);
         self.send(cid, &jp);
+        self.media_greet(cid, code);
         if let Some(x) = self.rooms.get_mut(code).and_then(|r| r.players.get_mut(&pid)) {
             x.ready = true;
         }
@@ -1720,6 +1755,16 @@ impl Game {
             "healthget" | "medcraft" | "medheal" => self.health_msg(cid, t, m, &code, &me),
             "giftget" | "giftsee" | "giftsend" | "giftdel" => self.gift_msg(cid, t, m),
             "petget" | "petadopt" | "petact" | "petdress" | "petrel" | "petsocial" => self.pet_msg(cid, t, m),
+            "video" | "vsync" | "vend" | "vstop" | "vjoin" | "vleave" => self.video_msg(cid, t, m, &code, &me),
+            "kjoin" | "ksong" | "kleave" | "kpass" | "kdur" | "kend" | "ksync" => {
+                self.karaoke_msg(cid, t, m, &code, &me)
+            }
+            "dj" | "djstop" => self.dj_msg(cid, t, m, &code, &me),
+            "report" => {
+                let mut r = self.report_new(&code, &me, m);
+                r["t"] = json!("rep");
+                self.send(cid, &r);
+            }
             "freq" => self.soc_request(cid, m["to"].as_str().unwrap_or("")),
             "facc" => self.soc_accept(cid, m["to"].as_str().unwrap_or("")),
             "finv" => self.soc_invite(cid, m["to"].as_str().unwrap_or("")),
@@ -1759,6 +1804,7 @@ impl Game {
 
     /// Prazos curtos (verificados a cada 10 ms): reconexão vencida, entrada demorada e estados adiados.
     pub fn timers(&mut self, now: u64) {
+        self.video_timers(now);
         let mut retire = Vec::new();
         for r in self.rooms.values() {
             for p in r.players.values() {
@@ -1804,6 +1850,7 @@ impl Game {
         let send_st = self.tick_n % 2 == 0;
         let codes: Vec<String> = self.rooms.keys().cloned().collect();
         for code in codes {
+            self.kar_tick(&code, now);
             let mut said = None;
             let Some(r) = self.rooms.get_mut(&code) else { continue };
             let full = send_st && now >= r.full_at;
@@ -1872,6 +1919,7 @@ impl Game {
         self.health.tick_file(now);
         self.gifts.tick(now);
         self.pets.tick(now);
+        self.reports.tick(now);
         self.cook.tick(now);
         self.badges.tick(now);
         let settled = std::mem::take(&mut self.identity.settled);
@@ -1922,6 +1970,7 @@ impl Game {
         self.health.flush();
         self.gifts.flush();
         self.pets.flush();
+        self.reports.write();
         self.cook.flush();
         self.badges.flush();
     }
@@ -1948,7 +1997,7 @@ impl Game {
         json!({
             "server": "rust", "version": VERSION, "rooms": self.rooms.len(), "maxRooms": self.set.max_rooms,
             "maxPerRoom": self.set.max_per_room,
-            "capacity": crate::capacity::estimate(self.set.max_rooms, self.set.max_per_room, None),
+            "capacity": self.capacity_view(self.set.max_rooms, self.set.max_per_room),
             "voice": {"transport": if self.set.voice_ws { "ws" } else { "webrtc" }, "privacy": self.set.voice_privacy, "on": self.set.voice_ws, "turn": false},
             "humans": humans, "bots": bots, "karaoke": 0, "video": 0, "styles": styles, "connections": self.conns.len(),
             "identity": identity, "security": self.seclog.stats(),
