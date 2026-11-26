@@ -174,7 +174,11 @@ pub fn spawn(commands: &mut Commands, t: &Theme, f: &UiFonts, cat: &EditorCatalo
     let md = button(commands, t, f, "🩺", false);
     commands.entity(md).observe(crate::medicine::on_toggle);
 
-    commands.entity(bar).add_children(&[emo, bp, ck, fm, md, pl, inv, set, exit]);
+    // 🎁 presentes
+    let gf = button(commands, t, f, "🎁", false);
+    commands.entity(gf).observe(crate::gift::on_toggle);
+
+    commands.entity(bar).add_children(&[emo, bp, ck, fm, md, gf, pl, inv, set, exit]);
     commands.entity(root).add_children(&[ep, pp]);
 }
 

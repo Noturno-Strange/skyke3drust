@@ -276,6 +276,14 @@ impl Farm {
     pub fn pantry(&self) -> BTreeMap<String, u64> {
         self.st.as_ref().map(|s| s.pantry.clone()).unwrap_or_default()
     }
+    /// Plantas já colhidas (só elas podem ser presenteadas).
+    pub fn harvested(&self) -> HashSet<String> {
+        self.st
+            .as_ref()
+            .map(|s| s.done.iter().filter(|(_, n)| **n > 0).map(|(k, _)| k.clone()).collect())
+            .unwrap_or_default()
+    }
+
     /// Despensa nova (resposta da culinária).
     pub fn set_pantry(&mut self, v: &Value) {
         if let Some(s) = self.st.as_mut() {

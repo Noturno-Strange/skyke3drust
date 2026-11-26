@@ -5808,6 +5808,7 @@ dependencies = [
  "bevy",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sky-avatars",
  "sky-identity",
  "sky-networking",

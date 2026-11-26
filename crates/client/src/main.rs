@@ -17,6 +17,7 @@ mod editor;
 mod farm;
 mod friends;
 mod gestures;
+mod gift;
 mod hud;
 mod look;
 mod medicine;
@@ -87,6 +88,7 @@ fn main() {
         cook::CookPlugin,
         friends::FriendsPlugin,
         medicine::MedicinePlugin,
+        gift::GiftPlugin,
     ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))
