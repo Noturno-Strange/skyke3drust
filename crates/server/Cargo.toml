@@ -1,0 +1,37 @@
+[package]
+name = "sky-server"
+description = "Servidor do Skyke3D em Rust (compatível com o cliente do navegador e o nativo)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "skyke3d-server"
+path = "src/main.rs"
+
+[dependencies]
+sky-security = { workspace = true }
+sky-identity = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["preserve_order"] }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+p256 = { workspace = true }
+base64 = { workspace = true }
+getrandom = { workspace = true }
+url = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "io-std", "signal", "fs"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws", "query"] }
+indexmap = "2"
+unicode-normalization = "0.1"
+flate2 = "1"
+brotli = "8"
+
+[lints]
+workspace = true

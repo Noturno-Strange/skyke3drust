@@ -13,6 +13,7 @@ members = [
     "crates/avatars",
     "crates/ui",
     "crates/client",
+    "crates/server",
     "tools/visual-comparator",
 ]
 
