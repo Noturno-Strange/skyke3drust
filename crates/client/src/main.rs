@@ -20,6 +20,7 @@ mod net;
 mod player;
 mod recovery;
 mod shot;
+mod social;
 mod state;
 
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
@@ -58,6 +59,7 @@ fn main() {
     .add_message::<SendChat>()
     .add_message::<SendGesture>()
     .add_message::<SendCfg>()
+    .add_message::<state::SendMsg>()
     .add_plugins((WorldPlugin { assets_dir: assets.clone() }, sky_ui::SkyUiPlugin))
     .add_plugins((
         look::LookPlugin { assets_dir: assets.clone() },
@@ -65,7 +67,13 @@ fn main() {
         net::NetPlugin,
         hud::HudPlugin,
     ))
-    .add_plugins((anim::AnimPlugin, gestures::GesturePlugin, editor::EditorPlugin, recovery::RecoveryPlugin))
+    .add_plugins((
+        anim::AnimPlugin,
+        gestures::GesturePlugin,
+        editor::EditorPlugin,
+        recovery::RecoveryPlugin,
+        social::SocialPlugin,
+    ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))
     .insert_resource(a.clone())

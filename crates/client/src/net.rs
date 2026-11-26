@@ -17,8 +17,11 @@ pub struct NetPlugin;
 
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (start, finish_connect, receive, send_moves, send_chat, send_gesture, send_cfg))
-            .add_systems(OnExit(Screen::Playing), leave);
+        app.add_systems(
+            Update,
+            (start, finish_connect, receive, send_moves, send_chat, send_gesture, send_cfg, send_msgs),
+        )
+        .add_systems(OnExit(Screen::Playing), leave);
     }
 }
 
@@ -65,6 +68,7 @@ fn start(
         },
     };
     s.my_name.clone_from(&r.name);
+    s.server = r.server.trim_end_matches('/').to_owned();
     let cfg = ConnectConfig {
         server: r.server,
         identity_path: identity_path(),
@@ -93,6 +97,7 @@ fn spawn_actor(commands: &mut Commands, assets: &AssetServer, kit: Option<&Avata
         Transform::from_xyz(p.x, p.y, p.z),
         ActorName(p.name.clone()),
         Name::new(p.name.clone()),
+        crate::state::NetId(p.id),
     ));
     // o cfg vem de outro jogador: validado contra as faixas do catálogo antes de usar
     if let Some(cfg) = kit.and_then(|k| k.palettes.clean(&p.cfg)) {
@@ -140,6 +145,7 @@ fn finish_connect(
     }
     *session = Session {
         online: true,
+        server: session.server.clone(),
         code: j.code.clone(),
         people: j.players.iter().filter(|p| !p.bot).count() as u32,
         max: j.max,
@@ -157,6 +163,15 @@ fn finish_connect(
     next.set(Screen::Playing);
 }
 
+/// Partes sociais que a recepção atualiza (emojis, silenciados, chat global).
+#[derive(bevy::ecs::system::SystemParam)]
+struct Social<'w, 's> {
+    muted: Res<'w, crate::state::Muted>,
+    global: ResMut<'w, crate::state::GlobalChat>,
+    cat: Res<'w, crate::editor::EditorCatalog>,
+    me: Query<'w, 's, Entity, With<Me>>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn receive(
     mut commands: Commands,
@@ -172,6 +187,7 @@ fn receive(
     mut looks: Query<&mut AvatarLook>,
     gcat: Res<GestureCatalog>,
     gests: Query<&Gesture>,
+    mut social: Social,
 ) {
     let Some(mut net) = net else { return };
     let now = time.elapsed_secs_f64() * 1000.0;
@@ -239,9 +255,24 @@ fn receive(
                     }
                 }
             }
-            NetEvent::Server(ServerMsg::Chat { name, text, .. }) => {
-                log.push(name, sky_security::clean_chat(&text, sky_shared::limits::CHAT), false);
+            NetEvent::Server(ServerMsg::Chat { id, name, text }) => {
+                if !id.is_some_and(|i| social.muted.0.contains(&i)) {
+                    log.push(name, sky_security::clean_chat(&text, sky_shared::limits::CHAT), false);
+                }
             }
+            NetEvent::Server(ServerMsg::Emo { id, i }) => {
+                let ent = if id == net.me { social.me.single().ok() } else { net.actors.get(&id).copied() };
+                if let (Some(ent), Some(ic)) = (ent, social.cat.emoji(i))
+                    && !social.muted.0.contains(&id)
+                {
+                    commands.entity(ent).insert(crate::state::Emote { ic: ic.to_owned(), left: 4.0 });
+                }
+            }
+            NetEvent::Server(ServerMsg::Gchat { name, text, .. }) => {
+                social.global.log.push(name, sky_security::clean_chat(&text, sky_shared::limits::CHAT), false);
+            }
+            NetEvent::Server(ServerMsg::Gsys { text }) => social.global.log.push("", text, true),
+            NetEvent::Server(ServerMsg::Gn { n }) => social.global.people = n,
             NetEvent::Server(ServerMsg::Sys { text }) => log.push("", text, true),
             NetEvent::Server(ServerMsg::Err { msg, .. }) => log.push("", format!("⚠ {msg}"), true),
             NetEvent::Closed(r) => {
@@ -341,6 +372,17 @@ fn send_cfg(mut msgs: MessageReader<SendCfg>, net: Option<Res<Net>>) {
             && let Ok(h) = net.h.lock()
         {
             h.send(&ClientMsg::Cfg { cfg: cfg.clone() });
+        }
+    }
+}
+
+/// Mensagens avulsas da interface (emoji, chat global, denúncia).
+fn send_msgs(mut msgs: MessageReader<crate::state::SendMsg>, net: Option<Res<Net>>) {
+    for crate::state::SendMsg(m) in msgs.read() {
+        if let Some(net) = &net
+            && let Ok(h) = net.h.lock()
+        {
+            h.send(m);
         }
     }
 }

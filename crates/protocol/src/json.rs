@@ -99,6 +99,25 @@ pub enum ClientMsg {
     Speak {
         v: bool,
     },
+    /// Emoji sobre a cabeça (`i` indexa `EMO` no catálogo).
+    Emo {
+        i: u32,
+    },
+    /// Liga ou desliga o chat global.
+    Gsub {
+        on: bool,
+    },
+    /// Mensagem no chat global.
+    Gchat {
+        text: String,
+    },
+    /// Denúncia de um jogador da sala (`reason`: `assedio`, `odio`, `sexual`, `spam`, `golpe`, `trapaca`, `outro`).
+    Report {
+        id: String,
+        reason: String,
+        #[serde(skip_serializing_if = "String::is_empty", default)]
+        note: String,
+    },
 }
 
 /// Ator como o servidor descreve (`pub` em `server.js`).
@@ -206,6 +225,24 @@ pub enum ServerMsg {
     Sys {
         text: String,
     },
+    Emo {
+        id: ActorId,
+        i: u32,
+    },
+    /// Chat global: `id` é um apelido opaco do autor (não o id da sala).
+    Gchat {
+        id: String,
+        name: String,
+        text: String,
+    },
+    /// Aviso do chat global.
+    Gsys {
+        text: String,
+    },
+    /// Pessoas online no servidor (chat global ligado).
+    Gn {
+        n: u64,
+    },
     Err {
         msg: String,
         scope: String,
@@ -292,6 +329,14 @@ impl ServerMsg {
             },
             "speak" => ServerMsg::Speak { id: need_id("id")?, v: v.get("v").and_then(Value::as_bool).unwrap_or(false) },
             "sys" => ServerMsg::Sys { text: s(&v, "text") },
+            "emo" => ServerMsg::Emo { id: need_id("id")?, i: u(&v, "i") as u32 },
+            "gchat" => ServerMsg::Gchat {
+                id: v.get("id").map(|x| x.as_str().map_or_else(|| x.to_string(), str::to_owned)).unwrap_or_default(),
+                name: s(&v, "name"),
+                text: s(&v, "text"),
+            },
+            "gsys" => ServerMsg::Gsys { text: s(&v, "text") },
+            "gn" => ServerMsg::Gn { n: u(&v, "n") },
             "err" => ServerMsg::Err { msg: s(&v, "msg"), scope: s(&v, "scope"), code: s(&v, "code"), raw: v },
             "challenge" => ServerMsg::Challenge {
                 id: s(&v, "id"),
@@ -335,6 +380,10 @@ mod tests {
         let r = ClientMsg::Idreg { k: "k".into(), pk: "p".into(), rpk: "r".into(), pow: String::new() };
         assert_eq!(r.to_json(), r#"{"t":"idreg","k":"k","pk":"p","rpk":"r"}"#);
         assert_eq!(ClientMsg::Leave.to_json(), r#"{"t":"leave"}"#);
+        assert_eq!(ClientMsg::Emo { i: 3 }.to_json(), r#"{"t":"emo","i":3}"#);
+        assert_eq!(ClientMsg::Gsub { on: true }.to_json(), r#"{"t":"gsub","on":true}"#);
+        let r = ClientMsg::Report { id: "p2".into(), reason: "spam".into(), note: String::new() };
+        assert_eq!(r.to_json(), r#"{"t":"report","id":"p2","reason":"spam"}"#);
     }
 
     #[test]
@@ -351,5 +400,11 @@ mod tests {
         assert!(matches!(o, ServerMsg::Other { ref t, .. } if t == "farm"));
         assert!(ServerMsg::parse(r#"{"x":1}"#).is_err());
         assert!(ServerMsg::parse(r#"{"t":"pl"}"#).is_err());
+        assert_eq!(
+            ServerMsg::parse(r#"{"t":"emo","id":"p2","i":4}"#).unwrap(),
+            ServerMsg::Emo { id: "p2".parse().unwrap(), i: 4 }
+        );
+        let g = ServerMsg::parse(r#"{"t":"gchat","id":"h1","name":"Ana","text":"oi","at":1}"#).unwrap();
+        assert!(matches!(g, ServerMsg::Gchat { ref name, ref text, .. } if name == "Ana" && text == "oi"));
     }
 }

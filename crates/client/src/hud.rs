@@ -4,7 +4,7 @@
 use crate::gestures::{Gesture, GestureCatalog};
 use crate::menu::despawn;
 use crate::player::Me;
-use crate::state::{ActorName, ChatLog, Screen, SendChat, SendGesture, Session};
+use crate::state::{ActorName, ChatLog, ChatTab, Emote, GlobalChat, Screen, SendChat, SendGesture, SendMsg, Session};
 use bevy::input_focus::{FocusCause, InputFocus};
 use bevy::prelude::*;
 use bevy::text::EditableText;
@@ -15,11 +15,22 @@ pub struct HudPlugin;
 
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(Screen::Playing), spawn_hud)
+        app.init_resource::<ChatTab>()
+            .init_resource::<GlobalChat>()
+            .add_systems(OnEnter(Screen::Playing), spawn_hud)
             .add_systems(OnExit(Screen::Playing), (despawn::<HudRoot>, despawn::<NameTag>))
             .add_systems(
                 Update,
-                (chat_keys, refresh_log, refresh_room, spawn_tags, place_tags, tag_colors, stop_gesture_on_walk)
+                (
+                    chat_keys,
+                    refresh_log,
+                    refresh_room,
+                    spawn_tags,
+                    place_tags,
+                    tag_colors,
+                    tag_emotes,
+                    stop_gesture_on_walk,
+                )
                     .run_if(in_state(Screen::Playing)),
             );
     }
@@ -39,12 +50,19 @@ struct RoomText;
 /// Rótulo de nome que segue um ator.
 #[derive(Component)]
 struct NameTag(Entity);
+/// Emoji no rótulo de nome (`.em` do original).
+#[derive(Component)]
+struct NameTagEmote(Entity);
+/// Botão de aba do chat.
+#[derive(Component)]
+struct ChatTabButton(ChatTab);
 /// Texto do rótulo de nome (a cor segue o `nc` do visual).
 #[derive(Component)]
 struct NameTagText(Entity);
 #[derive(Component)]
 struct HasTag;
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_hud(
     mut commands: Commands,
     t: Res<Theme>,
@@ -52,7 +70,10 @@ fn spawn_hud(
     s: Res<Session>,
     mut log: ResMut<ChatLog>,
     gcat: Res<GestureCatalog>,
+    ecat: Res<crate::editor::EditorCatalog>,
+    mut tab: ResMut<ChatTab>,
 ) {
+    *tab = ChatTab::Room;
     let root = commands
         .spawn((
             HudRoot,
@@ -98,7 +119,26 @@ fn spawn_hud(
             ..default()
         })
         .id();
-    let title = commands.spawn((Text::new("💬 Sala"), f.font(14.0, 700), TextColor(t.strong))).id();
+    // abas: chat da sala e chat global (o global é assinado na primeira vez que a aba abre)
+    let title = commands.spawn(Node { column_gap: Val::Px(6.0), ..default() }).id();
+    for (label, which) in [("💬 Sala", ChatTab::Room), ("🌐 Global", ChatTab::Global)] {
+        let b = button(&mut commands, &t, &f, label, which == ChatTab::Room);
+        commands.entity(b).insert(ChatTabButton(which)).observe(
+            move |_: On<Activate>,
+                  mut tab: ResMut<ChatTab>,
+                  mut g: ResMut<GlobalChat>,
+                  s: Res<Session>,
+                  mut send: MessageWriter<SendMsg>| {
+                *tab = which;
+                if which == ChatTab::Global && !g.on && s.online {
+                    g.on = true;
+                    send.write(SendMsg(sky_protocol::ClientMsg::Gsub { on: true }));
+                    g.log.push("", "Chat global: todas as salas deste servidor. Seja gentil!", true);
+                }
+            },
+        );
+        commands.entity(title).add_child(b);
+    }
     let logbox = commands
         .spawn(Node {
             flex_grow: 1.0,
@@ -114,16 +154,20 @@ fn spawn_hud(
     commands.entity(chat).add_children(&[title, logbox, input]);
     commands.entity(root).add_children(&[room, chat]);
 
-    // barra de baixo (`#bar`): gestos e editor de visual
+    // barra de baixo (`#bar`): emojis, gestos, visual, jogadores, convidar e sair
     let bar = commands
-        .spawn(Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(12.0),
-            left: Val::Percent(50.0),
-            margin: UiRect::left(Val::Px(-56.0)),
-            column_gap: Val::Px(8.0),
-            ..default()
-        })
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(12.0),
+                left: Val::Px(0.0),
+                right: Val::Px(0.0),
+                justify_content: JustifyContent::Center,
+                column_gap: Val::Px(8.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
         .id();
     let gb = button(&mut commands, &t, &f, "🎭", false);
     commands.entity(gb).observe(|_: On<Activate>, mut q: Query<&mut Node, With<GesturePanel>>| {
@@ -136,6 +180,7 @@ fn spawn_hud(
         crate::editor::toggle(&mut q);
     });
     commands.entity(bar).add_children(&[gb, eb]);
+    crate::social::spawn(&mut commands, &t, &f, &ecat, bar, root);
     // painel de gestos: os 30 do catálogo, com ícone e nome
     let gp = commands
         .spawn(panel(&t))
@@ -183,12 +228,16 @@ fn spawn_hud(
 }
 
 /// Enter abre o chat (ou envia), Esc devolve o teclado para o jogo. Mensagens a cada 800 ms no máximo, como no original.
+#[allow(clippy::too_many_arguments)]
 fn chat_keys(
     keys: Res<ButtonInput<KeyCode>>,
     mut focus: ResMut<InputFocus>,
     mut input: Query<(Entity, &mut EditableText), With<ChatInput>>,
     mut send: MessageWriter<SendChat>,
+    mut send_g: MessageWriter<SendMsg>,
     mut log: ResMut<ChatLog>,
+    tab: Res<ChatTab>,
+    s: Res<Session>,
     time: Res<Time<Real>>,
     mut last: Local<f64>,
 ) {
@@ -217,7 +266,15 @@ fn chat_keys(
     }
     *last = now;
     text.clear();
-    send.write(SendChat(msg));
+    match *tab {
+        ChatTab::Room => {
+            send.write(SendChat(msg));
+        }
+        ChatTab::Global if s.online => {
+            send_g.write(SendMsg(sky_protocol::ClientMsg::Gchat { text: msg }));
+        }
+        ChatTab::Global => log.push("", "Sem conexão: o chat global aparece ao entrar numa sala.", true),
+    }
 }
 
 /// O teclado está com um campo de texto? (o movimento ignora as teclas nesse caso)
@@ -225,11 +282,39 @@ pub fn typing(focus: &InputFocus, inputs: &Query<(), With<EditableText>>) -> boo
     focus.get().is_some_and(|e| inputs.contains(e))
 }
 
-fn refresh_log(log: Res<ChatLog>, mut q: Query<&mut Text, With<ChatLogText>>, mut seen: Local<u64>) {
-    if log.version == *seen {
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn refresh_log(
+    room: Res<ChatLog>,
+    global: Res<GlobalChat>,
+    tab: Res<ChatTab>,
+    t: Res<Theme>,
+    mut q: Query<&mut Text, With<ChatLogText>>,
+    mut tabs: Query<(&ChatTabButton, &mut BackgroundColor, &Children)>,
+    mut labels: Query<(&mut TextColor, &mut Text), (With<sky_ui::ButtonLabel>, Without<ChatLogText>)>,
+    mut seen: Local<(u64, u64, Option<ChatTab>)>,
+) {
+    let log = if *tab == ChatTab::Global { &global.log } else { &*room };
+    let key = (log.version, global.people, Some(*tab));
+    if key == *seen {
         return;
     }
-    *seen = log.version;
+    *seen = key;
+    for (b, mut bg, ch) in &mut tabs {
+        let sel = b.0 == *tab;
+        bg.0 = if sel { t.accent } else { t.panel };
+        for c in ch {
+            if let Ok((mut tc, mut tx)) = labels.get_mut(*c) {
+                tc.0 = if sel { t.on_accent } else { t.fg };
+                if b.0 == ChatTab::Global {
+                    tx.0 = if global.people > 0 {
+                        format!("🌐 Global · {}", global.people)
+                    } else {
+                        "🌐 Global".into()
+                    };
+                }
+            }
+        }
+    }
     let start = log.lines.len().saturating_sub(40);
     let s = log.lines[start..]
         .iter()
@@ -278,6 +363,7 @@ fn spawn_tags(
                 Pickable::IGNORE,
             ))
             .with_children(|c| {
+                c.spawn((Text::new(""), f.font(18.0, 500), TextColor(t.fg), NameTagEmote(e)));
                 c.spawn((Text::new(n.0.clone()), f.font(13.0, 600), TextColor(t.fg), NameTagText(e)));
             });
     }
@@ -334,6 +420,16 @@ fn tag_colors(
         let want = looks.get(tag.0).ok().and_then(|l| cat.name_color(l.0.get("nc"))).unwrap_or(t.fg);
         if c.0 != want {
             c.0 = want;
+        }
+    }
+}
+
+/// Emoji sobre a cabeça: aparece no rótulo de nome enquanto o `Emote` dura.
+fn tag_emotes(emotes: Query<&Emote>, mut tags: Query<(&NameTagEmote, &mut Text)>) {
+    for (tag, mut t) in &mut tags {
+        let want = emotes.get(tag.0).map_or_else(|_| String::new(), |e| format!("{} ", e.ic));
+        if t.0 != want {
+            t.0 = want;
         }
     }
 }

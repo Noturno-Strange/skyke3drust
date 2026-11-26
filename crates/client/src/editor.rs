@@ -128,7 +128,7 @@ impl EditorCatalog {
     pub fn from_catalog_json(bytes: &[u8]) -> Result<Self, serde_json::Error> {
         let v: BTreeMap<String, serde_json::Value> = serde_json::from_slice(bytes)?;
         let mut lists = BTreeMap::new();
-        for k in ["FACES", "HS", "HATS", "BT", "SHOES", "NFX", "NCOL"] {
+        for k in ["FACES", "HS", "HATS", "BT", "SHOES", "NFX", "NCOL", "EMO"] {
             if let Some(a) = v.get(k).and_then(|x| x.as_array()) {
                 lists.insert(k.to_owned(), a.iter().filter_map(|s| s.as_str().map(str::to_owned)).collect());
             }
@@ -138,6 +138,15 @@ impl EditorCatalog {
 
     fn list(&self, k: &str) -> &[String] {
         self.lists.get(k).map_or(&[], Vec::as_slice)
+    }
+
+    /// Emojis da barra (`EMO`).
+    pub fn emojis(&self) -> &[String] {
+        self.list("EMO")
+    }
+
+    pub fn emoji(&self, i: u32) -> Option<&str> {
+        self.emojis().get(i as usize).map(String::as_str)
     }
 
     /// Cor do nome (`NCOL`); a 0 é a do tema.

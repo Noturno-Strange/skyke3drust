@@ -29,6 +29,8 @@ pub struct ConnectRequest {
 #[derive(Resource, Debug, Clone, Default)]
 pub struct Session {
     pub online: bool,
+    /// Endereço do servidor (para o link de convite).
+    pub server: String,
     pub code: String,
     pub people: u32,
     pub max: u32,
@@ -67,6 +69,41 @@ impl ChatLog {
 /// Gesto que o jogador quer fazer (`stop` para).
 #[derive(Message, Debug, Clone)]
 pub struct SendGesture(pub String);
+
+/// Qualquer mensagem para o servidor (emoji, chat global, denúncia...); sem conexão, é descartada.
+#[derive(Message, Debug, Clone)]
+pub struct SendMsg(pub sky_protocol::ClientMsg);
+
+/// Id do ator na sala (nos avatares dos outros jogadores).
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NetId(pub sky_shared::ActorId);
+
+/// Jogadores silenciados nesta sessão: o chat e os emojis deles não aparecem.
+#[derive(Resource, Debug, Default)]
+pub struct Muted(pub std::collections::HashSet<sky_shared::ActorId>);
+
+/// Emoji sobre a cabeça (`showEmo`: some em 4 s).
+#[derive(Component, Debug, Clone)]
+pub struct Emote {
+    pub ic: String,
+    pub left: f32,
+}
+
+/// Chat global: linhas, pessoas online e se a assinatura já foi pedida.
+#[derive(Resource, Debug, Default)]
+pub struct GlobalChat {
+    pub log: ChatLog,
+    pub people: u64,
+    pub on: bool,
+}
+
+/// Aba do chat em uso.
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ChatTab {
+    #[default]
+    Room,
+    Global,
+}
 
 /// Visual novo do jogador para enviar ao servidor (`{t:'cfg'}`).
 #[derive(Message, Debug, Clone)]
