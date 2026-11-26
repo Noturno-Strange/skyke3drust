@@ -5,6 +5,7 @@
 
 use crate::farm::{Farm, FarmCatalog, coin};
 use crate::player::Me;
+use crate::show::{At, LifeShow};
 use crate::state::{Screen, SendRaw, ServerOther, Session};
 use bevy::prelude::*;
 use bevy::text::EditableText;
@@ -30,6 +31,12 @@ impl Plugin for CookPlugin {
 
 /// Fogueira (centro da área de caminhada, `WALK`) e o alcance para cozinhar.
 const FIRE: Vec2 = Vec2::new(0.0, 1.2);
+
+/// Prato pronto sobre a fogueira, acima das cabeças de quem está sentado em volta (o mesmo para quem cozinhou e para
+/// quem está perto).
+fn dish(ic: &str) -> LifeShow {
+    LifeShow::new(ic, At::Xz(FIRE), 2.6, DISH_S, 1.25)
+}
 const REACH: f32 = 5.5;
 /// O prato pronto fica sobre a fogueira por 4 s e depois vai para a mão.
 const DISH_S: f32 = 4.0;
@@ -228,6 +235,8 @@ fn receive(
     mut cooked: ResMut<crate::backpack::CookedRecipes>,
     mut log: ResMut<crate::state::ChatLog>,
     snd: Res<crate::sound::Sound>,
+    mut show: MessageWriter<LifeShow>,
+    who: crate::show::Actors,
 ) {
     for m in msgs.read() {
         let v = &m.raw;
@@ -262,6 +271,9 @@ fn receive(
                         "★ Estrela vermelha {}! Você voltou ao nível 1 e ganha +10% de experiência e +5% de moedas a cada estrela.",
                         v.get("rank").and_then(Value::as_u64).unwrap_or(0)
                     );
+                    snd.play("cook_done", 1.0);
+                    snd.play("join", 1.0);
+                    show.write(LifeShow::new("⭐", At::Me, 2.6, 3.0, 1.3));
                     continue;
                 }
                 if let Some(p) = v.get("pantry") {
@@ -301,6 +313,7 @@ fn receive(
                     snd.play("join", 0.9);
                 }
                 cook.slots.clear();
+                show.write(dish(&r.ic));
                 cook.dish = Some((id, DISH_S));
             }
             "supplyr" => {
@@ -320,8 +333,18 @@ fn receive(
                 }
             }
             "cookfx" => {
+                // outro jogador terminou uma receita: o prato aparece sobre a fogueira e o som vem com o volume da distância
+                let Some((_, name, d)) = v.get("id").and_then(Value::as_str).and_then(|id| who.find(id)) else {
+                    continue;
+                };
                 if let Some(st) = v.get("st").and_then(Value::as_u64) {
-                    log.push("", format!("⭐ Um jogador ganhou a {st}ª estrela de cozinheiro!"), true);
+                    log.push("", format!("⭐ {name} ganhou a {st}ª estrela de cozinheiro!"), true);
+                } else if let Some(r) = v.get("r").and_then(Value::as_str).and_then(|r| cat.recipe(r)) {
+                    show.write(dish(&r.ic));
+                    let vol = crate::sound::dvol(d);
+                    if vol > 0.03 {
+                        snd.play("cook_done", vol);
+                    }
                 }
             }
             _ => {}

@@ -2,6 +2,7 @@
 //! escolhe a semente e o canteiro e se mostra o progresso. As barras andam no relógio do servidor (diferença medida
 //! em cada resposta), uma vez por segundo com o painel aberto.
 
+use crate::show::{At, LifeShow};
 use crate::state::{Screen, SendRaw, ServerOther, Session};
 use bevy::prelude::*;
 use bevy::text::EditableText;
@@ -379,6 +380,8 @@ fn receive(
     cat: Res<FarmCatalog>,
     mut log: ResMut<crate::state::ChatLog>,
     snd: Res<crate::sound::Sound>,
+    mut show: MessageWriter<LifeShow>,
+    who: crate::show::Actors,
 ) {
     for m in msgs.read() {
         match m.t.as_str() {
@@ -433,10 +436,13 @@ fn receive(
                     ),
                     "dig" => "⛏ Planta arrancada.".into(),
                     "buy" => format!("🎉 Comprado: {}!", m.raw.get("name").and_then(Value::as_str).unwrap_or_default()),
-                    "renew" => format!(
-                        "★ Safra {}: você voltou ao nível 1 e ganha +10% de experiência e +5% nas moedas a cada safra.",
-                        u(&m.raw, "rank")
-                    ),
+                    "renew" => {
+                        show.write(LifeShow::new("🌾", At::Me, 2.6, 3.0, 1.3));
+                        format!(
+                            "★ Safra {}: você voltou ao nível 1 e ganha +10% de experiência e +5% nas moedas a cada safra.",
+                            u(&m.raw, "rank")
+                        )
+                    }
                     _ => {
                         // colheita: o que veio, a experiência e o que subiu
                         let mut sum: Vec<(String, u64)> = Vec::new();
@@ -447,6 +453,9 @@ fn receive(
                                 Some((_, t)) => *t += q,
                                 None => sum.push((c, q)),
                             }
+                        }
+                        if let Some(c) = sum.first().and_then(|(c, _)| cat.crop(c)) {
+                            show.write(LifeShow::new(c.ic.clone(), At::Me, 2.4, 2.5, 1.0));
                         }
                         let got: Vec<String> = sum
                             .iter()
@@ -469,8 +478,14 @@ fn receive(
                 };
             }
             "farmfx" => {
+                // outro jogador colheu: o fruto aparece sobre a cabeça dele
+                let Some((e, name, _)) = m.raw.get("id").and_then(Value::as_str).and_then(|id| who.find(id)) else {
+                    continue;
+                };
                 if let Some(sf) = m.raw.get("sf").and_then(Value::as_u64) {
-                    log.push("", format!("🌾 Um jogador começou a {sf}ª safra!"), true);
+                    log.push("", format!("🌾 {name} começou a {sf}ª safra!"), true);
+                } else if let Some(c) = m.raw.get("c").and_then(Value::as_str).and_then(|c| cat.crop(c)) {
+                    show.write(LifeShow::new(c.ic.clone(), At::Actor(e), 2.4, 2.5, 1.0));
                 }
             }
             _ => {}

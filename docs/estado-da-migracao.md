@@ -1,6 +1,6 @@
 # Estado da migração
 
-Atualizado em 25/11/2026. Referência: Skyke3D 3.30.1 (commit `9d6ed71`). Nenhuma funcionalidade conta como migrada
+Atualizado em 26/11/2026. Referência: Skyke3D 3.30.1 (commit `9d6ed71`). Nenhuma funcionalidade conta como migrada
 sem teste funcional; a coluna "Validação" diz como cada item foi conferido.
 
 ## Etapas (seção 12 da especificação)
@@ -15,8 +15,8 @@ sem teste funcional; a coluna "Validação" diz como cada item foi conferido.
 | 6 | Avatares, personalização e animações | em andamento: rosto e cabeça portados (idênticos ao navegador, pixel a pixel, em 16 casos), cores de pele, roupa e calçado, 34 cabelos e 3 chapéus (geometria exportada; cores portadas e iguais às do navegador até o último bit de f32), corpo inteiro gerado (tronco, braços, pernas e pés com bermuda e bota; `bandG`, `tubeG` e `ballsGeo` portados, iguais ao export do navegador), cores brilhantes, contornos e o emissivo dos avatares (`EMI`); boca que abre nos gestos; editor de visual (👕: abas, estilos, paletas, cores brilhantes, cor do nome), salvo em disco e enviado ao servidor; andar, pular, sentar e os 30 gestos e danças portados (`animA`, `DANCES`), com painel 🎭 |
 | 7 | Interface original | em andamento: tela inicial, código da sala e lotação, chat da sala e global, nomes (com a cor do nome) e emojis sobre os avatares, barra com 🎭 gestos, 👕 visual, 😀 emojis, 🎒 mochila, 👥 jogadores (silenciar, denunciar), 🔗 convite, ⚙️ ajustes (interface, brilho, tema, alto contraste, bots) e 🚪 sair, código de recuperação; amigos (pedidos, presença, convites); faltam mídia (vídeos, rádio, karaokê), perfil público editável e conta (passkeys, troca de chaves) |
 | 8 | Compatibilidade com o servidor existente | núcleo feito: ticket, identidade, entrar/criar sala, posições, eventos de sala |
-| 9 | Gameplay e Rhai | sandbox Rhai pronta; mochila e itens na mão, 🌱 fazenda (canteiros, sementes, loja, plantar, regar, colher, arrancar, safras) e 🍳 culinária (despensa, armazém, receitas, lavar e descascar, cozinhar e assar perto da fogueira; o prato vai para a mão e libera a receita na mochila), 🩺 medicina, 🎁 presentes e 🐾 mascote (desenho do `pet-art.js` portado sobre um Canvas 2D em `tiny-skia`), todos testados contra o servidor Node |
-| 10 | Áudio, voz, rádio e karaokê | pendente (protocolo de voz já decodificado) |
+| 9 | Gameplay e Rhai | sandbox Rhai pronta; mochila e itens na mão, 🌱 fazenda (canteiros, sementes, loja, plantar, regar, colher, arrancar, safras) e 🍳 culinária (despensa, armazém, receitas, lavar e descascar, cozinhar e assar perto da fogueira; o prato vai para a mão e libera a receita na mochila), 🩺 medicina, 🎁 presentes e 🐾 mascote (desenho do `pet-art.js` portado sobre um Canvas 2D em `tiny-skia`), todos testados contra o servidor Node; destaque dos objetos (`lifeShow`: prato sobre a fogueira, fruto de quem colhe, 🎁, ⭐, 🌾, remédio) e aura dos remédios (pontos, frasco em 3D e poses de preparar, cuidar e receber) |
+| 10 | Áudio, voz, rádio e karaokê | áudio feito: efeitos sintetizados (Web Audio portado em `synth.rs`), as 8 faixas lofi e o ambiente de cada mundo; voz, rádio e karaokê pendentes (protocolo de voz já decodificado) |
 | 11 | Servidor Rust | pendente (o Node.js continua sendo a autoridade) |
 | 12 | Testes de segurança, desempenho e compatibilidade | parcial: testes unitários, interoperabilidade com o Node, comparador visual |
 | 13 | Binários Linux e Windows | feito: CI compila e testa; cada tag `v*` publica pacotes Linux e Windows numa Release (`.github/workflows/release.yml`) |
@@ -75,12 +75,11 @@ Para reproduzir: ver [ferramentas.md](ferramentas.md).
   (`cfg`). O visual é escolhido no editor 👕, fica salvo em
   `skyke3d/online/visual.json` e vai ao servidor a cada mudança; o efeito do nome (`nf`) é guardado mas ainda não é
   desenhado.
-* Interface parcial: faltam vídeos, rádio, karaokê, perfil público editável e conta. Silenciar vale só na sessão. Pratos e frutos sobre a fogueira e sobre quem colhe (`lifeShow`) ainda não aparecem.
+* Interface parcial: faltam vídeos, rádio, karaokê, perfil público editável e conta. Silenciar vale só na sessão. O destaque e a aura são desenhados pela interface sobre a cena (como os ícones na mão), então não ficam atrás de objetos; com "reduzir movimento" o original os deixa parados, opção que o cliente nativo ainda não tem.
 
 ## Próximos passos
 
-1. Efeitos sobre a cena (`lifeShow`: prato sobre a fogueira, fruto sobre quem colhe) e a aura dos remédios.
-2. Fauna, partículas e efeitos (chamas, brasas, chuva, estrela cadente), com comportamentos em Rhai.
-3. Voz (Opus) e áudio, com a boca que abre ao falar; vídeos, rádio e karaokê em WebView isolada.
-4. Perfil e conta (passkeys, troca de chaves, recuperação num aparelho novo pelo cliente nativo) e efeitos do nome (`nf`).
-5. Servidor Rust (Axum + Tokio + Rustls) validado contra a suíte de testes do servidor Node.js.
+1. Fauna, partículas e efeitos (chamas, brasas, chuva, estrela cadente), com comportamentos em Rhai.
+2. Voz (Opus), com a boca que abre ao falar; vídeos, rádio e karaokê em WebView isolada.
+3. Perfil e conta (passkeys, troca de chaves, recuperação num aparelho novo pelo cliente nativo) e efeitos do nome (`nf`).
+4. Servidor Rust (Axum + Tokio + Rustls) validado contra a suíte de testes do servidor Node.js.

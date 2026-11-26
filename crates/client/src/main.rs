@@ -30,6 +30,7 @@ mod player;
 mod recovery;
 mod settings;
 mod shot;
+mod show;
 mod social;
 mod sound;
 mod state;
@@ -96,6 +97,7 @@ fn main() {
         gift::GiftPlugin,
         pet::PetPlugin,
         sound::SoundPlugin,
+        show::ShowPlugin,
     ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))

@@ -115,6 +115,7 @@ fn item(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn receive(
     mut msgs: MessageReader<ServerOther>,
     mut g: ResMut<Gifts>,
@@ -123,6 +124,7 @@ fn receive(
     farm: Res<crate::farm::FarmCatalog>,
     cook: Res<crate::cook::CookCatalog>,
     snd: Res<crate::sound::Sound>,
+    mut show: MessageWriter<crate::show::LifeShow>,
 ) {
     for m in msgs.read() {
         let v = &m.raw;
@@ -166,6 +168,7 @@ fn receive(
                         it.map_or(String::new(), |(ic, n)| format!(": {ic} {n}"))
                     );
                     snd.play("confirm", 0.9);
+                    show.write(crate::show::LifeShow::new("🎁", crate::show::At::Me, 2.4, 2.5, 1.0));
                     g.sel = None;
                     if let Some((pp, _)) = &g.to {
                         send.write(SendRaw(json!({"t": "giftsee", "to": pp})));

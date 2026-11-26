@@ -473,6 +473,7 @@ fn place_held_icons(
         &ComputedNode,
         &mut Visibility,
     )>,
+    ui: Res<UiScale>,
 ) {
     let Ok((camera, cam_t)) = cam.single() else { return };
     let mut have = HashSet::new();
@@ -492,6 +493,8 @@ fn place_held_icons(
         let top = camera.world_to_viewport(cam_t, p + Vec3::Y * 0.3);
         match (hold, camera.world_to_viewport(cam_t, p), top) {
             (Some(_), Ok(v), Ok(vt)) => {
+                // `Val::Px` é multiplicado pelo tamanho da interface; a posição na tela não
+                let (v, vt) = (v / ui.0, vt / ui.0);
                 let px = ((v.y - vt.y).abs() * 2.0 * grow(h.t)).clamp(4.0, 200.0);
                 if let (Some(mut text), Some(mut font)) = (text, font) {
                     font.font_size = (px * 0.8).into();

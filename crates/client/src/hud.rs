@@ -375,6 +375,7 @@ fn place_tags(
     cam: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     actors: Query<&GlobalTransform, With<ActorName>>,
     mut tags: Query<(Entity, &NameTag, &mut Node, &ComputedNode, &mut Visibility)>,
+    ui: Res<UiScale>,
 ) {
     let Ok((camera, cam_t)) = cam.single() else { return };
     for (e, tag, mut node, computed, mut vis) in &mut tags {
@@ -385,6 +386,8 @@ fn place_tags(
         let p = at.translation() + Vec3::Y * 2.25;
         match camera.world_to_viewport(cam_t, p) {
             Ok(v) => {
+                // `Val::Px` é multiplicado pelo tamanho da interface; a posição na tela não
+                let v = v / ui.0;
                 let size = computed.size() * computed.inverse_scale_factor();
                 node.left = Val::Px(v.x - size.x / 2.0);
                 node.top = Val::Px(v.y - size.y);
