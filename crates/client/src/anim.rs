@@ -163,13 +163,20 @@ fn build_rigs(
 #[allow(clippy::type_complexity)]
 fn animate(
     time: Res<Time>,
-    mut actors: Query<(&GlobalTransform, &mut Rig, Option<&Me>, Option<&Remote>, Option<&crate::gestures::Gesture>)>,
+    mut actors: Query<(
+        &GlobalTransform,
+        &mut Rig,
+        Option<&Me>,
+        Option<&Remote>,
+        Option<&crate::gestures::Gesture>,
+        Option<&crate::backpack::Drinking>,
+    )>,
     mut joints: Query<&mut Transform, Without<Rig>>,
     world: Option<Res<sky_world::CurrentWorld>>,
 ) {
     let seats = world.as_ref().map(|w| crate::player::seats(w)).unwrap_or_default();
     let dt = time.delta_secs().max(0.0001);
-    for (gt, mut rig, me, remote, gest) in &mut actors {
+    for (gt, mut rig, me, remote, gest, drinking) in &mut actors {
         let pos = gt.translation();
         let moved = rig.last.map_or(0.0, |l| Vec2::new(pos.x - l.x, pos.z - l.z).length());
         rig.last = Some(pos);
@@ -210,6 +217,10 @@ fn animate(
             } else {
                 p.fig_pos.y += p.fig_rot.z.sin().abs() * 0.2 + p.fig_rot.x.sin().abs() * 0.18;
             }
+        }
+        // usando um item (`a.drink`): o braço direito leva o item à boca
+        if let Some(d) = drinking {
+            p.arm_r.x = -2.1 * (((1.6 - d.0) * 2.0).min(1.0) * std::f32::consts::PI * 0.9).sin();
         }
         let mut set = |e: Entity, f: &dyn Fn(&mut Transform)| {
             if let Ok(mut t) = joints.get_mut(e) {

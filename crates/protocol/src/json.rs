@@ -89,11 +89,11 @@ pub enum ClientMsg {
     Gest {
         g: String,
     },
-    /// Item na mão (`item` vazio solta). `use` consome.
+    /// Item na mão (`item: null` solta). `use: 1` consome (o servidor só aceita 0 ou 1, não booleano).
     Item {
-        item: String,
-        #[serde(rename = "use", skip_serializing_if = "std::ops::Not::not", default)]
-        use_: bool,
+        item: Option<String>,
+        #[serde(rename = "use", skip_serializing_if = "is_zero", default)]
+        use_: u8,
     },
     /// Indicador de fala.
     Speak {
@@ -364,6 +364,10 @@ impl ServerMsg {
     }
 }
 
+fn is_zero(v: &u8) -> bool {
+    *v == 0
+}
+
 impl ClientMsg {
     pub fn to_json(&self) -> String {
         // Serializar estes tipos não falha (só strings, números e mapas com chave string).
@@ -379,8 +383,11 @@ mod tests {
     fn client_messages_match_original_shape() {
         let m = ClientMsg::Move { x: 1.0, z: 2.0, ry: 0.5, y: 0.0, s: 0 };
         assert_eq!(m.to_json(), r#"{"t":"move","x":1.0,"z":2.0,"ry":0.5,"y":0.0,"s":0}"#);
-        let i = ClientMsg::Item { item: "cafe".into(), use_: false };
+        let i = ClientMsg::Item { item: Some("cafe".into()), use_: 0 };
         assert_eq!(i.to_json(), r#"{"t":"item","item":"cafe"}"#);
+        let u = ClientMsg::Item { item: Some("cafe".into()), use_: 1 };
+        assert_eq!(u.to_json(), r#"{"t":"item","item":"cafe","use":1}"#);
+        assert_eq!(ClientMsg::Item { item: None, use_: 0 }.to_json(), r#"{"t":"item","item":null}"#);
         let r = ClientMsg::Idreg { k: "k".into(), pk: "p".into(), rpk: "r".into(), pow: String::new() };
         assert_eq!(r.to_json(), r#"{"t":"idreg","k":"k","pk":"p","rpk":"r"}"#);
         assert_eq!(ClientMsg::Leave.to_json(), r#"{"t":"leave"}"#);

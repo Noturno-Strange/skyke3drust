@@ -155,7 +155,11 @@ pub fn spawn(commands: &mut Commands, t: &Theme, f: &UiFonts, cat: &EditorCatalo
         crate::settings::toggle(&mut q);
     });
 
-    commands.entity(bar).add_children(&[emo, pl, inv, set, exit]);
+    // 🎒 mochila
+    let bp = button(commands, t, f, "🎒", false);
+    commands.entity(bp).observe(crate::backpack::on_toggle);
+
+    commands.entity(bar).add_children(&[emo, bp, pl, inv, set, exit]);
     commands.entity(root).add_children(&[ep, pp]);
 }
 

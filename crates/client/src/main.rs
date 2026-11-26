@@ -11,6 +11,7 @@
 
 mod anim;
 mod args;
+mod backpack;
 mod editor;
 mod gestures;
 mod hud;
@@ -75,9 +76,11 @@ fn main() {
         recovery::RecoveryPlugin,
         social::SocialPlugin,
         settings::SettingsPlugin,
+        backpack::BackpackPlugin,
     ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))
+    .insert_resource(load_items(&assets))
     .insert_resource(a.clone())
     .add_systems(Startup, setup)
     .add_systems(OnEnter(Screen::Playing), start_gesture);
@@ -124,6 +127,14 @@ fn setup(
         load.write(LoadWorld(a.world));
         next.set(Screen::Playing);
     }
+}
+
+fn load_items(assets: &std::path::Path) -> backpack::ItemCatalog {
+    let p = assets.join("../data/catalogs/catalog.json");
+    std::fs::read(&p).ok().and_then(|b| backpack::ItemCatalog::from_catalog_json(&b).ok()).unwrap_or_else(|| {
+        error!("mochila: catálogo não encontrado em {}", p.display());
+        backpack::ItemCatalog::default()
+    })
 }
 
 fn load_editor_catalog(assets: &std::path::Path) -> editor::EditorCatalog {

@@ -170,6 +170,8 @@ struct Social<'w, 's> {
     global: ResMut<'w, crate::state::GlobalChat>,
     cat: Res<'w, crate::editor::EditorCatalog>,
     me: Query<'w, 's, Entity, With<Me>>,
+    items: Res<'w, crate::backpack::ItemCatalog>,
+    held: Query<'w, 's, &'static crate::backpack::Held>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -273,6 +275,13 @@ fn receive(
             }
             NetEvent::Server(ServerMsg::Gsys { text }) => social.global.log.push("", text, true),
             NetEvent::Server(ServerMsg::Gn { n }) => social.global.people = n,
+            NetEvent::Server(ServerMsg::Item { id, item, use_ }) => {
+                let ent = if id == net.me { social.me.single().ok() } else { net.actors.get(&id).copied() };
+                if let Some(ent) = ent {
+                    let it = item.as_deref().and_then(|i| social.items.get(i)).cloned();
+                    crate::backpack::apply_item(&mut commands, ent, social.held.get(ent).ok(), it, use_);
+                }
+            }
             NetEvent::Server(ServerMsg::Sys { text }) => log.push("", text, true),
             NetEvent::Server(ServerMsg::Err { msg, .. }) => log.push("", format!("⚠ {msg}"), true),
             NetEvent::Closed(r) => {
