@@ -19,6 +19,7 @@ mod friends;
 mod gestures;
 mod hud;
 mod look;
+mod medicine;
 mod menu;
 mod net;
 mod player;
@@ -85,12 +86,14 @@ fn main() {
         farm::FarmPlugin,
         cook::CookPlugin,
         friends::FriendsPlugin,
+        medicine::MedicinePlugin,
     ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))
     .insert_resource(load_items(&assets))
     .insert_resource(load_catalog::<farm::FarmCatalog>(&assets, "fazenda", farm::FarmCatalog::from_catalog_json))
     .insert_resource(load_catalog::<cook::CookCatalog>(&assets, "culinária", cook::CookCatalog::from_catalog_json))
+    .insert_resource(load_catalog::<medicine::MedCatalog>(&assets, "medicina", medicine::MedCatalog::from_catalog_json))
     .insert_resource(a.clone())
     .add_systems(Startup, setup)
     .add_systems(OnEnter(Screen::Playing), start_gesture);

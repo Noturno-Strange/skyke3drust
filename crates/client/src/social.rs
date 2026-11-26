@@ -170,7 +170,11 @@ pub fn spawn(commands: &mut Commands, t: &Theme, f: &UiFonts, cat: &EditorCatalo
     let ck = button(commands, t, f, "🍳", false);
     commands.entity(ck).observe(crate::cook::on_toggle);
 
-    commands.entity(bar).add_children(&[emo, bp, ck, fm, pl, inv, set, exit]);
+    // 🩺 medicina
+    let md = button(commands, t, f, "🩺", false);
+    commands.entity(md).observe(crate::medicine::on_toggle);
+
+    commands.entity(bar).add_children(&[emo, bp, ck, fm, md, pl, inv, set, exit]);
     commands.entity(root).add_children(&[ep, pp]);
 }
 

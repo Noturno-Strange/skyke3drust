@@ -170,13 +170,14 @@ fn animate(
         Option<&Remote>,
         Option<&crate::gestures::Gesture>,
         Option<&crate::backpack::Drinking>,
+        Option<&crate::medicine::Health>,
     )>,
     mut joints: Query<&mut Transform, Without<Rig>>,
     world: Option<Res<sky_world::CurrentWorld>>,
 ) {
     let seats = world.as_ref().map(|w| crate::player::seats(w)).unwrap_or_default();
     let dt = time.delta_secs().max(0.0001);
-    for (gt, mut rig, me, remote, gest, drinking) in &mut actors {
+    for (gt, mut rig, me, remote, gest, drinking, health) in &mut actors {
         let pos = gt.translation();
         let moved = rig.last.map_or(0.0, |l| Vec2::new(pos.x - l.x, pos.z - l.z).length());
         rig.last = Some(pos);
@@ -217,6 +218,9 @@ fn animate(
             } else {
                 p.fig_pos.y += p.fig_rot.z.sin().abs() * 0.2 + p.fig_rot.x.sin().abs() * 0.18;
             }
+        }
+        if health.is_some_and(|h| h.tired) && gest.is_none() {
+            crate::medicine::tired_pose(&mut p);
         }
         // usando um item (`a.drink`): o braço direito leva o item à boca
         if let Some(d) = drinking {

@@ -99,6 +99,7 @@ fn spawn_actor(commands: &mut Commands, assets: &AssetServer, kit: Option<&Avata
         Name::new(p.name.clone()),
         crate::state::NetId(p.id),
         crate::state::Fid(p.fid.clone()),
+        crate::medicine::Health::from_value(&p.health),
     ));
     // o cfg vem de outro jogador: validado contra as faixas do catálogo antes de usar
     if let Some(cfg) = kit.and_then(|k| k.palettes.clean(&p.cfg)) {
@@ -138,7 +139,7 @@ fn finish_connect(
     load.write(LoadWorld(j.style.parse().unwrap_or(World::Amazora)));
     if let Ok((e, mut t)) = me.single_mut() {
         t.translation = Vec3::new(j.me.x, j.me.y, j.me.z);
-        commands.entity(e).insert(ActorName(j.me.name.clone()));
+        commands.entity(e).insert((ActorName(j.me.name.clone()), crate::state::NetId(j.id)));
     }
     let mut actors = HashMap::new();
     for p in j.players.iter().filter(|p| p.id != j.id) {
