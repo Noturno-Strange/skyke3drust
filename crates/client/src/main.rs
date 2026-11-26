@@ -15,6 +15,7 @@ mod backpack;
 mod cook;
 mod editor;
 mod farm;
+mod friends;
 mod gestures;
 mod hud;
 mod look;
@@ -83,6 +84,7 @@ fn main() {
         backpack::BackpackPlugin,
         farm::FarmPlugin,
         cook::CookPlugin,
+        friends::FriendsPlugin,
     ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))

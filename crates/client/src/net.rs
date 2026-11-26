@@ -98,6 +98,7 @@ fn spawn_actor(commands: &mut Commands, assets: &AssetServer, kit: Option<&Avata
         ActorName(p.name.clone()),
         Name::new(p.name.clone()),
         crate::state::NetId(p.id),
+        crate::state::Fid(p.fid.clone()),
     ));
     // o cfg vem de outro jogador: validado contra as faixas do catálogo antes de usar
     if let Some(cfg) = kit.and_then(|k| k.palettes.clean(&p.cfg)) {
@@ -350,7 +351,12 @@ fn leave(mut commands: Commands, net: Option<Res<Net>>, mut s: ResMut<Session>) 
         }
         commands.remove_resource::<Net>();
     }
-    *s = Session::default();
+    // endereço e nome ficam: um convite aceito entra noutra sala do mesmo servidor
+    *s = Session {
+        server: std::mem::take(&mut s.server),
+        my_name: std::mem::take(&mut s.my_name),
+        ..Session::default()
+    };
 }
 
 /// Gesto do jogador local: aplica aqui (o servidor só repassa para os outros) e envia.

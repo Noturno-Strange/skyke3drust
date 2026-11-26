@@ -1,4 +1,5 @@
-//! Botões sociais da barra (`#bar` no original): 😀 emojis sobre a cabeça, 👥 jogadores (silenciar ou denunciar),
+//! Botões sociais da barra (`#bar` no original): 😀 emojis sobre a cabeça, 👥 amigos e jogadores (pedidos, convites,
+//! silenciar ou denunciar),
 //! 🔗 convidar (copia o link da sala) e 🚪 sair da sala.
 
 use crate::editor::EditorCatalog;
@@ -33,8 +34,10 @@ struct PlayersRows;
 
 /// Denúncia aberta (mostra os motivos) e se a lista precisa ser refeita.
 #[derive(Resource, Debug, Default)]
-struct PlayersState {
+pub struct PlayersState {
     reporting: Option<ActorId>,
+    /// Amigo com a remoção pedida (o segundo clique confirma).
+    removing: Option<String>,
     dirty: bool,
 }
 
@@ -123,7 +126,7 @@ pub fn spawn(commands: &mut Commands, t: &Theme, f: &UiFonts, cat: &EditorCatalo
     );
     let pp = side_panel(commands, t, 480.0);
     commands.entity(pp).insert(PlayersPanel);
-    let title = commands.spawn((Text::new("👥 Jogadores"), f.font(15.0, 700), TextColor(t.strong))).id();
+    let title = commands.spawn((Text::new("👥 Amigos e jogadores"), f.font(15.0, 700), TextColor(t.strong))).id();
     let rows = commands
         .spawn((PlayersRows, Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(6.0), ..default() }))
         .id();
@@ -180,23 +183,27 @@ fn tick_emotes(mut commands: Commands, time: Res<Time>, mut q: Query<(Entity, &m
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn rebuild_players(
     mut commands: Commands,
     mut st: ResMut<PlayersState>,
     muted: Res<Muted>,
+    friends: Res<crate::friends::Friends>,
+    s: Res<Session>,
     t: Res<Theme>,
     f: Res<UiFonts>,
     rows: Query<(Entity, Option<&Children>), With<PlayersRows>>,
     panel: Query<&Node, With<PlayersPanel>>,
     actors: Query<(&NetId, &ActorName), Changed<ActorName>>,
-    all: Query<(&NetId, &ActorName)>,
+    all: Query<(&NetId, &ActorName, Option<&crate::state::Fid>)>,
     mut removed: RemovedComponents<NetId>,
+    mut seen: Local<u64>,
 ) {
-    let changed = !actors.is_empty() || removed.read().count() > 0;
+    let changed = !actors.is_empty() || removed.read().count() > 0 || friends.version != *seen;
     if !(st.dirty || changed && panel.iter().any(|n| n.display != Display::None)) {
         return;
     }
+    *seen = friends.version;
     st.dirty = false;
     let Ok((root, kids)) = rows.single() else { return };
     if let Some(kids) = kids {
@@ -204,34 +211,171 @@ fn rebuild_players(
             commands.entity(*c).despawn();
         }
     }
-    let mut list: Vec<(ActorId, String)> =
-        all.iter().filter(|(id, _)| !id.0.bot).map(|(id, n)| (id.0, n.0.clone())).collect();
-    list.sort_by_key(|a| a.1.to_lowercase());
     let mut out = Vec::new();
+    let heading = |commands: &mut Commands, txt: String| {
+        commands.spawn((Text::new(txt), f.font(14.0, 700), TextColor(t.strong))).id()
+    };
+    let line = |commands: &mut Commands, name: String, tag: &str| {
+        let row = commands
+            .spawn(Node {
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                flex_wrap: FlexWrap::Wrap,
+                ..default()
+            })
+            .id();
+        let n = commands
+            .spawn((
+                Text::new(format!("{name}  ")),
+                f.font(15.0, 600),
+                TextColor(t.fg),
+                Node { flex_grow: 1.0, ..default() },
+            ))
+            .id();
+        let tg = commands.spawn((Text::new(tag.to_owned()), f.font(13.0, 500), TextColor(t.fg))).id();
+        commands.entity(row).add_children(&[n, tg]);
+        row
+    };
+    // convite recebido
+    if let Some((name, _)) = &friends.invite {
+        let row = line(&mut commands, format!("📨 {name} chamou você"), "");
+        let b = button(&mut commands, &t, &f, "🚪 Entrar", true);
+        commands.entity(b).observe(
+            |_: On<Activate>,
+             mut fr: ResMut<crate::friends::Friends>,
+             s: Res<Session>,
+             mut req: MessageWriter<crate::state::ConnectRequest>,
+             mut next: ResMut<NextState<Screen>>| {
+                crate::friends::join_invite(&mut fr, &s, &mut req, &mut next);
+            },
+        );
+        commands.entity(row).add_child(b);
+        out.push(row);
+    }
+    // pedidos de amizade
+    if !friends.req.is_empty() {
+        out.push(heading(&mut commands, format!("Pedidos de amizade ({})", friends.req.len())));
+        for (id, name) in &friends.req {
+            let row = line(&mut commands, name.clone(), "quer ser seu amigo");
+            let (id1, id2) = (id.clone(), id.clone());
+            let ok = button(&mut commands, &t, &f, "✔ Aceitar", true);
+            commands.entity(ok).observe(
+                move |_: On<Activate>,
+                      mut fr: ResMut<crate::friends::Friends>,
+                      mut send: MessageWriter<crate::state::SendRaw>,
+                      mut log: ResMut<ChatLog>| fr.accept(&id1, &mut send, &mut log),
+            );
+            let no = button(&mut commands, &t, &f, "✖ Recusar", false);
+            commands
+                .entity(no)
+                .observe(move |_: On<Activate>, mut fr: ResMut<crate::friends::Friends>| fr.decline(&id2));
+            commands.entity(row).add_children(&[ok, no]);
+            out.push(row);
+        }
+    }
+    // amigos: online primeiro
+    let mut list: Vec<&crate::friends::Friend> = friends.fr.iter().collect();
+    list.sort_by_key(|x| (!friends.on.contains(&x.id), x.n.to_lowercase()));
+    let online = friends.on.len();
+    out.push(heading(
+        &mut commands,
+        format!("Amigos ({}{})", list.len(), if online > 0 { format!(", {online} online") } else { String::new() }),
+    ));
     if list.is_empty() {
         out.push(
-            commands.spawn((Text::new("Ninguém mais na sala por enquanto."), f.font(15.0, 500), TextColor(t.fg))).id(),
+            commands
+                .spawn((Text::new("Adicione alguém da sala: ➕ ao lado do nome."), f.font(14.0, 500), TextColor(t.fg)))
+                .id(),
         );
     }
-    for (id, name) in list {
-        let row = commands.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(6.0), ..default() }).id();
-        let n = commands
-            .spawn((Text::new(name), f.font(15.0, 600), TextColor(t.fg), Node { flex_grow: 1.0, ..default() }))
-            .id();
+    for fr in list {
+        let live = friends.on.contains(&fr.id);
+        let row = line(
+            &mut commands,
+            format!("{} {}", if live { "🟢" } else { "⚪" }, fr.n),
+            if live { "online" } else { "offline" },
+        );
+        if live && s.online {
+            let id = fr.id.clone();
+            let b = button(&mut commands, &t, &f, "📨 Convidar", false);
+            commands.entity(b).observe(
+                move |_: On<Activate>,
+                      fr: Res<crate::friends::Friends>,
+                      mut send: MessageWriter<crate::state::SendRaw>| fr.invite(&id, &mut send),
+            );
+            commands.entity(row).add_child(b);
+        }
+        let id = fr.id.clone();
+        let rm = button(
+            &mut commands,
+            &t,
+            &f,
+            if st.removing.as_deref() == Some(fr.id.as_str()) { "Confirmar remoção" } else { "✖ Remover" },
+            false,
+        );
+        commands.entity(rm).observe(
+            move |_: On<Activate>,
+                  mut fr: ResMut<crate::friends::Friends>,
+                  mut st: ResMut<PlayersState>,
+                  mut send: MessageWriter<crate::state::SendRaw>| {
+                if st.removing.as_deref() == Some(id.as_str()) {
+                    st.removing = None;
+                    fr.remove(&id, &mut send);
+                } else {
+                    st.removing = Some(id.clone());
+                }
+                st.dirty = true;
+            },
+        );
+        commands.entity(row).add_child(rm);
+        out.push(row);
+    }
+    // quem está na sala
+    let mut room: Vec<(ActorId, String, String)> = all
+        .iter()
+        .filter(|(id, _, _)| !id.0.bot)
+        .map(|(id, n, fid)| (id.0, n.0.clone(), fid.map(|x| x.0.clone()).unwrap_or_default()))
+        .collect();
+    room.sort_by_key(|a| a.1.to_lowercase());
+    out.push(heading(&mut commands, format!("Nesta sala ({})", room.len())));
+    if room.is_empty() {
+        out.push(
+            commands.spawn((Text::new("Ninguém mais na sala por enquanto."), f.font(14.0, 500), TextColor(t.fg))).id(),
+        );
+    }
+    for (id, name, fid) in room {
+        let is_friend = friends.friend_of_handle(&fid).is_some();
+        let row = line(&mut commands, name.clone(), if is_friend { "amigo" } else { "" });
+        if !is_friend && crate::friends::ok_id(&fid) && fid != friends.h {
+            if friends.sent.contains(&fid) {
+                let b = button(&mut commands, &t, &f, "⏳ Pedido enviado", false);
+                commands.entity(row).add_child(b);
+            } else {
+                let b = button(&mut commands, &t, &f, "➕ Adicionar", true);
+                let (fid, name) = (fid.clone(), name.clone());
+                commands.entity(b).observe(
+                    move |_: On<Activate>,
+                          mut fr: ResMut<crate::friends::Friends>,
+                          mut send: MessageWriter<crate::state::SendRaw>,
+                          mut log: ResMut<ChatLog>| fr.request(&fid, &name, &mut send, &mut log),
+                );
+                commands.entity(row).add_child(b);
+            }
+        }
         let is_muted = muted.0.contains(&id);
-        let m = button(&mut commands, &t, &f, if is_muted { "🔊 Ouvir" } else { "🔇 Silenciar" }, false);
+        let m = button(&mut commands, &t, &f, if is_muted { "🔊" } else { "🔇" }, false);
         commands.entity(m).observe(move |_: On<Activate>, mut muted: ResMut<Muted>, mut st: ResMut<PlayersState>| {
             if !muted.0.remove(&id) {
                 muted.0.insert(id);
             }
             st.dirty = true;
         });
-        let r = button(&mut commands, &t, &f, "🚩 Denunciar", false);
+        let r = button(&mut commands, &t, &f, "🚩", false);
         commands.entity(r).observe(move |_: On<Activate>, mut st: ResMut<PlayersState>| {
             st.reporting = if st.reporting == Some(id) { None } else { Some(id) };
             st.dirty = true;
         });
-        commands.entity(row).add_children(&[n, m, r]);
+        commands.entity(row).add_children(&[m, r]);
         out.push(row);
         if st.reporting == Some(id) {
             let reasons = commands

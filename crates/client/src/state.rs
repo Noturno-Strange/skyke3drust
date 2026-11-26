@@ -94,6 +94,10 @@ pub fn rid() -> String {
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NetId(pub sky_shared::ActorId);
 
+/// Apelido da conexão de um jogador da sala (para pedir amizade).
+#[derive(Component, Debug, Clone, Default)]
+pub struct Fid(pub String);
+
 /// Jogadores silenciados nesta sessão: o chat e os emojis deles não aparecem.
 #[derive(Resource, Debug, Default)]
 pub struct Muted(pub std::collections::HashSet<sky_shared::ActorId>);
