@@ -29,4 +29,4 @@ assert n >= 1, 'nenhum teste sobe o servidor: atualize o run.sh'
 PY
 cd "$tmp"
 if [ "$#" -gt 0 ]; then files=("$@"); else mapfile -t files < <(grep -l startServer tests/*.test.js); fi
-SKY_SERVER_BIN="$bin" node --test --test-concurrency=4 "${files[@]}"
+SKY_SERVER_BIN="$bin" node --test --test-concurrency=4 --test-timeout=60000 "${files[@]}"

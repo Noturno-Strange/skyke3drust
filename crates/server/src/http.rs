@@ -234,6 +234,10 @@ fn resp(site: &Site, status: u16, ctype: &str, body: Vec<u8>, extra: &[(&str, St
     for (k, v) in extra {
         b = b.header(*k, v.as_str());
     }
+    if head && status != 304 {
+        // HEAD diz o tamanho do corpo que o GET mandaria
+        b = b.header("Content-Length", body.len());
+    }
     b.body(if head { Body::empty() } else { Body::from(body) }).unwrap_or_default()
 }
 
@@ -362,6 +366,21 @@ pub async fn handle(app: Arc<App>, remote: SocketAddr, req: Request<Body>) -> Re
             head,
         ),
         "/vendor/three-r186.min.js" => send_cached(site, &h, &site.three, head),
+        "/farm.json" | "/profile.json" => {
+            let mut g = lock(&app);
+            let key = if path == "/farm.json" { "farm" } else { "prof" };
+            if g.over(&ip, key, 60, 60000) {
+                g.abuse.r429 += 1;
+                return plain(site, 429, "429", &[("Retry-After", "60".into())], head);
+            }
+            let id = query_param(&uri, "id").unwrap_or_default();
+            let v = if path == "/farm.json" { g.farm_json(&id) } else { g.profile_json(&id) };
+            let (status, body) = match v {
+                Some(v) => (200, v),
+                None => (404, json!({"ok": false})),
+            };
+            json_resp(site, status, &body, head)
+        }
         p => {
             if let Some(a) = site.pwa.get(p).or_else(|| site.assets.get(p)) {
                 return send_cached(site, &h, a, head);

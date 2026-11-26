@@ -273,7 +273,7 @@ fn shutdown(app: &App) {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
@@ -368,6 +368,9 @@ async fn main() {
             if n % 600 == 0 {
                 g.minute(now);
             }
+            if n % 6000 == 0 {
+                g.ten_minutes();
+            }
         }
     });
     let bind: SocketAddr = format!("{}:{}", set.bind_host, set.port)
@@ -428,6 +431,11 @@ async fn main() {
         let _ = tx.send(true);
     });
     let a = app.clone();
+    // como o Node (noDelay): mensagens pequenas saem na hora, sem esperar o algoritmo de Nagle
+    use axum::serve::ListenerExt;
+    let listener = listener.tap_io(|tcp| {
+        let _ = tcp.set_nodelay(true);
+    });
     let server = axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(async move {
             let _ = stop_rx.wait_for(|v| *v).await;

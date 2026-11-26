@@ -6,21 +6,27 @@
 
 pub mod admission;
 pub mod auth;
+pub mod badges;
 pub mod banmgr;
 pub mod bots;
 pub mod capacity;
 pub mod catalog;
 pub mod config;
+pub mod cook;
+pub mod farm;
 pub mod game;
+pub mod guard;
 pub mod http;
 pub mod identity;
 pub mod identity_ws;
+pub mod levels;
 pub mod limits;
 pub mod names;
 pub mod netutil;
 pub mod persist;
 pub mod playerdata;
 pub mod profanity;
+pub mod pubprofile;
 pub mod seclog;
 pub mod social;
 pub mod validate;

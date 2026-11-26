@@ -417,6 +417,11 @@ pub struct Game {
     pub action_limit: ActionLimit,
     pub social: crate::social::Social,
     pub player_data: crate::playerdata::PlayerData,
+    pub pubp: crate::pubprofile::PubProfiles,
+    pub farm: crate::farm::Farm,
+    pub cook: crate::cook::Cook,
+    pub guard: crate::guard::Guard,
+    pub badges: crate::badges::Badges,
     mute_salt: [u8; 16],
     tick_n: u64,
     pub started: u64,
@@ -500,6 +505,11 @@ impl Game {
             action_limit: ActionLimit::default(),
             social: crate::social::Social::default(),
             player_data,
+            pubp: crate::pubprofile::PubProfiles::new(&cfg.data_file("PROFILES_FILE", "profiles.json")),
+            farm: crate::farm::Farm::new(&cfg.data_file("FARM_FILE", "farm.json")),
+            cook: crate::cook::Cook::new(&cfg.data_file("COOK_FILE", "cook.json")),
+            guard: crate::guard::Guard::default(),
+            badges: crate::badges::Badges::new(&cfg.data_file("BADGES_FILE", "badges.json")),
             mute_salt: crate::random_bytes::<16>(),
             tick_n: 0,
             started: crate::now(),
@@ -1086,10 +1096,34 @@ impl Game {
         }
         let (Some(code), Some(me)) = (c.room.clone(), c.me.clone()) else { return };
         let id = c.ident_id.clone();
-        if let Some(p) = self.rooms.get(&code).and_then(|r| r.players.get(&me)) {
-            let (name, cfg) = (p.name.clone(), p.cfg.clone());
-            self.player_data.update(&id, json!({"name": name, "cfg": cfg}));
+        let Some((name, cfg)) = self.me_info(cid) else { return };
+        self.player_data.update(&id, json!({"name": name, "cfg": cfg}));
+        let pid = pid_of(&id);
+        let fields =
+            self.pubp.fields_of(&pid).unwrap_or_else(|| json!({"bio": "", "like": "", "mood": "", "world": ""}));
+        if self.pubp.publish(&pid, cid, &fields, Some((name, cfg))) {
+            if let Some(c) = self.conns.get_mut(&cid) {
+                c.pp = pid.clone();
+            }
+            if let Some(p) = self.rooms.get_mut(&code).and_then(|r| r.players.get_mut(&me)) {
+                p.pp = pid.clone();
+            }
+            self.send(cid, &json!({"t": "pubp", "on": 1, "pp": pid, "f": fields}));
+            self.bc(&code, &json!({"t": "ppid", "id": me, "pp": pid}), Some(cid));
         }
+    }
+
+    /// Nome e visual atuais de quem está numa sala por esta conexão.
+    pub fn me_info(&self, cid: u64) -> Option<(String, Value)> {
+        let c = self.conns.get(&cid)?;
+        let p = self.rooms.get(c.room.as_ref()?)?.players.get(c.me.as_ref()?)?;
+        Some((p.name.clone(), p.cfg.clone()))
+    }
+
+    /// O perfil público como a página vê (`PUB.get`).
+    pub fn pub_get(&self, pid: &str) -> Option<Value> {
+        let me = |c: u64| self.me_info(c);
+        self.pubp.get(pid, &me)
     }
 
     fn lobby(&mut self, cid: u64, m: &Value) {
@@ -1482,8 +1516,13 @@ impl Game {
             return self.send(cid, &json!({"t": "account", "err": "session"}));
         }
         let id = c.ident_id.clone();
-        let saved = self.player_data.get(&id);
-        self.send(cid, &json!({"t": "account", "data": saved.unwrap_or(Value::Null), "profile": Value::Null}));
+        let pid = pid_of(&id);
+        let data = self
+            .player_data
+            .get(&id)
+            .or_else(|| self.pub_get(&pid).map(|pr| json!({"name": pr["name"], "cfg": pr["cfg"], "friends": null})));
+        let profile = self.pubp.fields_of(&pid);
+        self.send(cid, &json!({"t": "account", "data": data, "profile": profile}));
     }
 
     /// Mensagens de quem já está numa sala.
@@ -1519,7 +1558,11 @@ impl Game {
                 let (scope, id) =
                     self.conns.get(&cid).map(|c| (c.ident_scope.clone(), c.ident_id.clone())).unwrap_or_default();
                 if scope == "primary" {
-                    self.player_data.update(&id, json!({"name": name, "cfg": m["cfg"]}));
+                    self.player_data.update(&id, json!({"name": name.clone(), "cfg": m["cfg"]}));
+                    let pid = pid_of(&id);
+                    if let Some(f) = self.pubp.fields_of(&pid) {
+                        self.pubp.publish(&pid, cid, &f, Some((name, m["cfg"].clone())));
+                    }
                 }
                 self.bc(&code, &json!({"t": "cfg", "id": me, "cfg": m["cfg"]}), Some(cid));
             }
@@ -1554,8 +1597,15 @@ impl Game {
                 if let Some(i) = item.as_str()
                     && self.cat.recipe_items.contains(i)
                 {
-                    // alimento de receita só depois de prepará-lo (a culinária ainda não chegou: fica bloqueado)
-                    return;
+                    // alimento de receita fica bloqueado até o jogador prepará-la pela primeira vez
+                    let ok = self.conns.get(&cid).is_some_and(|c| {
+                        c.ident_scope == "primary"
+                            && !c.ident_id.is_empty()
+                            && self.cook.unlocked(&pid_of(&c.ident_id), i)
+                    });
+                    if !ok {
+                        return;
+                    }
                 }
                 let Some(p) = self.rooms.get_mut(&code).and_then(|r| r.players.get_mut(&me)) else { return };
                 if m["use"] == 1 {
@@ -1652,6 +1702,10 @@ impl Game {
             }
             "tsync" => self.send(cid, &json!({"t": "tsync", "c": m["c"], "s": crate::now()})),
             "friends" => self.soc_friends(cid, m),
+            "pubp" | "plike" | "gbook" | "gblist" | "gbdel" => self.profile_msg(cid, t, m),
+            "farmget" | "farmdo" | "supply" | "cookget" | "cookdo" | "cookrenew" => {
+                self.economy_msg(cid, t, m, &code, &me)
+            }
             "freq" => self.soc_request(cid, m["to"].as_str().unwrap_or("")),
             "facc" => self.soc_accept(cid, m["to"].as_str().unwrap_or("")),
             "finv" => self.soc_invite(cid, m["to"].as_str().unwrap_or("")),
@@ -1673,6 +1727,11 @@ impl Game {
         }
         self.soc_leave(cid);
         self.auth.forget_owner(cid);
+        let pp = self.conns.get(&cid).map(|c| c.pp.clone()).unwrap_or_default();
+        if !pp.is_empty() {
+            let snap = self.me_info(cid);
+            self.pubp.leave(&pp, cid, snap);
+        }
         let Some(c) = self.conns.remove(&cid) else { return };
         let (Some(room), Some(me)) = (c.room, c.me) else { return };
         if matches!(code, 4000 | 4001 | 1008 | 1009) {
@@ -1794,12 +1853,20 @@ impl Game {
         self.names.tick(now);
         self.identity.tick(now);
         self.player_data.tick(now);
+        self.pubp.tick(now);
+        self.farm.tick(now);
+        self.cook.tick(now);
+        self.badges.tick(now);
         let settled = std::mem::take(&mut self.identity.settled);
         for id in settled {
             self.seclog.log("recovery.apply", crate::seclog::Ev { id: &id, ..Default::default() });
             self.auth.revoke_sessions(&id);
             self.close_identity_conns(&id, None, Some("primary"));
         }
+    }
+
+    pub fn ten_minutes(&mut self) {
+        self.pubp.sweep();
     }
 
     pub fn minute(&mut self, now: u64) {
@@ -1832,6 +1899,10 @@ impl Game {
         self.names.flush();
         self.identity.flush();
         self.player_data.flush();
+        self.pubp.flush();
+        self.farm.flush();
+        self.cook.flush();
+        self.badges.flush();
     }
 
     /// Números do painel `/status.json` (`stats`).
@@ -1908,5 +1979,308 @@ mod tests {
         assert_eq!(i16::from_le_bytes([b[9], b[10]]), ((7.0f64.sin().atan2(7.0f64.cos())) * 10000.0).round() as i16);
         assert_eq!((b[11], b[12]), (50, 1));
         assert_eq!(pid_of("abc").len(), 20);
+    }
+}
+
+impl Game {
+    /// Perfil público, curtidas e livro de visitas.
+    fn profile_msg(&mut self, cid: u64, t: &str, m: &Value) {
+        let Some(c) = self.conns.get(&cid) else { return };
+        let (scope, id, pp) = (c.ident_scope.clone(), c.ident_id.clone(), c.pp.clone());
+        let primary = scope == "primary" && !id.is_empty();
+        match t {
+            "pubp" => {
+                if !primary {
+                    return self.send(cid, &json!({"t": "err", "scope": "pubp", "msg": "Entre com sua identidade para ter um perfil público."}));
+                }
+                let pid = pid_of(&id);
+                if !pp.is_empty() && pp != pid {
+                    self.pubp.leave(&pp, cid, None);
+                }
+                let src = if m["on"] == true { m.clone() } else { self.pubp.fields_of(&pid).unwrap_or(Value::Null) };
+                let f = match crate::pubprofile::clean_fields(&src, true) {
+                    Ok(f) => f,
+                    Err(e) => return self.send(cid, &json!({"t": "pubp", "on": 0, "err": e})),
+                };
+                let me = self.me_info(cid);
+                if !self.pubp.publish(&pid, cid, &f, me) {
+                    return self.send(cid, &json!({"t": "pubp", "on": 0, "err": "full"}));
+                }
+                if let Some(c) = self.conns.get_mut(&cid) {
+                    c.pp = pid.clone();
+                }
+                let (code, me) = self.conns.get(&cid).map(|c| (c.room.clone(), c.me.clone())).unwrap_or_default();
+                if let (Some(code), Some(me)) = (code, me) {
+                    if let Some(p) = self.rooms.get_mut(&code).and_then(|r| r.players.get_mut(&me)) {
+                        p.pp = pid.clone();
+                    }
+                    let fields = self.pubp.fields_of(&pid);
+                    self.send(cid, &json!({"t": "pubp", "on": 1, "pp": pid, "f": fields}));
+                    self.bc(&code, &json!({"t": "ppid", "id": me, "pp": pid}), Some(cid));
+                }
+            }
+            "plike" => {
+                if scope != "primary" {
+                    return self.send(
+                        cid,
+                        &json!({"t": "err", "scope": "plike", "msg": "Entre com sua identidade para curtir."}),
+                    );
+                }
+                let to = m["to"].as_str().unwrap_or("");
+                let r = self.pubp.like(to, &pid_of(&id));
+                self.send(cid, &json!({"t": "plike", "to": to, "ok": r["ok"], "dup": r["dup"] == true, "reason": r["reason"].as_str().unwrap_or(""), "count": r["count"].as_u64().unwrap_or(0)}));
+            }
+            "gbook" => {
+                if scope != "primary" {
+                    return self.send(cid, &json!({"t": "err", "scope": "gbook", "msg": "Entre com sua identidade para escrever no livro de visitas."}));
+                }
+                let to = m["to"].as_str().unwrap_or("");
+                let name = self.me_info(cid).map(|x| x.0).unwrap_or_default();
+                let text = crate::profanity::censor(m["text"].as_str().unwrap_or(""));
+                match self.pubp.post(to, &pid_of(&id), &name, &text) {
+                    Ok(owners) => {
+                        self.send(cid, &json!({"t": "gbook", "to": to, "ok": true, "reason": ""}));
+                        for o in owners {
+                            let opp = self.conns.get(&o).map(|c| c.pp.clone()).unwrap_or_default();
+                            if !opp.is_empty() {
+                                let list = self.pubp.list_book(&opp);
+                                self.send(o, &json!({"t": "gblist", "list": list}));
+                            }
+                        }
+                    }
+                    Err(e) => self.send(cid, &json!({"t": "gbook", "to": to, "ok": false, "reason": e})),
+                }
+            }
+            "gblist" => {
+                let list = if pp.is_empty() { json!([]) } else { self.pubp.list_book(&pp) };
+                self.send(cid, &json!({"t": "gblist", "list": list}));
+            }
+            "gbdel" => {
+                if !pp.is_empty() {
+                    self.pubp.remove_note(&pp, m["id"].as_i64().unwrap_or(0));
+                }
+                let list = if pp.is_empty() { json!([]) } else { self.pubp.list_book(&pp) };
+                self.send(cid, &json!({"t": "gblist", "list": list}));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Origem para o teto de contas novas por dia: IPv4 inteiro, IPv6 pelo bloco /48.
+pub fn reg_day_key(ip: &str) -> String {
+    if ip.ends_with("::/64") {
+        format!("{}::/48", ip.split(':').take(3).collect::<Vec<_>>().join(":"))
+    } else {
+        ip.to_owned()
+    }
+}
+
+impl Game {
+    /// Código público de quem age, ou vazio (e avisa) sem identidade autenticada (`farmOwner`, `cookOwner`…).
+    pub fn owner_of(&mut self, cid: u64, scope: &str, msg: &str) -> String {
+        let pid = self
+            .conns
+            .get(&cid)
+            .filter(|c| c.ident_scope == "primary" && !c.ident_id.is_empty())
+            .map(|c| pid_of(&c.ident_id));
+        match pid {
+            Some(p) => p,
+            None => {
+                self.send(cid, &json!({"t": "err", "scope": scope, "msg": msg}));
+                String::new()
+            }
+        }
+    }
+
+    fn cook_view(&self, pid: &str) -> Value {
+        let mut v = self.cook.view(pid);
+        v["t"] = json!("cook");
+        v["pantry"] = self.farm.view(pid)["pantry"].clone();
+        v
+    }
+
+    fn farm_view(&self, pid: &str) -> Value {
+        let mut v = self.farm.view(pid);
+        v["t"] = json!("farm");
+        v
+    }
+
+    /// Fazenda e culinária.
+    fn economy_msg(&mut self, cid: u64, t: &str, m: &Value, code: &str, me: &str) {
+        const FARM_MSG: &str = "Entre com sua identidade para plantar e guardar sua fazenda.";
+        const COOK_MSG: &str = "Entre com sua identidade para cozinhar e guardar seu progresso.";
+        let rid = m["rid"].clone();
+        let ip = self.conns.get(&cid).map(|c| c.ip.clone()).unwrap_or_default();
+        match t {
+            "farmget" => {
+                let pid = self.owner_of(cid, "farm", FARM_MSG);
+                if !pid.is_empty() {
+                    let v = self.farm_view(&pid);
+                    self.send(cid, &v);
+                }
+            }
+            "supply" => {
+                let pid = self.owner_of(cid, "farm", FARM_MSG);
+                if pid.is_empty() {
+                    return;
+                }
+                let mut r = self.farm.supply(&pid, m["i"].as_str().unwrap_or(""));
+                let ok = r["ok"] == true;
+                r["t"] = json!("supplyr");
+                r["rid"] = rid;
+                self.send(cid, &r);
+                if ok {
+                    let v = self.cook_view(&pid);
+                    self.send(cid, &v);
+                }
+            }
+            "cookget" => {
+                let pid = self.owner_of(cid, "cook", COOK_MSG);
+                if !pid.is_empty() {
+                    let v = self.cook_view(&pid);
+                    self.send(cid, &v);
+                }
+            }
+            "farmdo" => {
+                let pid = self.owner_of(cid, "farm", FARM_MSG);
+                if pid.is_empty() {
+                    return;
+                }
+                let k = m["k"].clone();
+                let g = self.guard.check(&pid);
+                if g["ok"] != true {
+                    return self.send(cid, &json!({"t": "farmr", "rid": rid, "k": k, "ok": false, "reason": g["reason"], "wait": g["wait"]}));
+                }
+                let origin = reg_day_key(&ip);
+                let fresh = !self.farm.has(&pid);
+                if fresh && k == "plant" && !self.guard.may_open(&origin, "farm") {
+                    return self.send(cid, &json!({"t": "farmr", "rid": rid, "k": k, "ok": false, "reason": "novos"}));
+                }
+                let guard = &mut self.guard;
+                let mut gain = |p: &str, xp: f64, scale: f64| guard.factor(p, "farm", xp, scale);
+                let mut r = self.farm.act(&pid, m, &mut gain);
+                let ok = r["ok"] == true;
+                if ok {
+                    self.guard.act(&pid);
+                    if fresh {
+                        self.guard.opened(&origin, "farm");
+                    }
+                }
+                let first_crop = r["got"][0]["c"].clone();
+                let rank = r["rank"].clone();
+                r["t"] = json!("farmr");
+                r["rid"] = rid;
+                r["k"] = k.clone();
+                self.send(cid, &r);
+                if ok && k == "harvest" {
+                    let v = self.cook_view(&pid);
+                    self.send(cid, &v);
+                    if !first_crop.is_null() {
+                        self.bc(code, &json!({"t": "farmfx", "id": me, "c": first_crop}), Some(cid));
+                    }
+                }
+                if ok && k == "renew" {
+                    self.bc(code, &json!({"t": "farmfx", "id": me, "sf": rank}), Some(cid));
+                }
+            }
+            "cookdo" => {
+                let pid = self.owner_of(cid, "cook", COOK_MSG);
+                if pid.is_empty() {
+                    return;
+                }
+                let (x, z) = self.rooms.get(code).and_then(|r| r.players.get(me)).map_or((0.0, 0.0), |p| (p.x, p.z));
+                if (x - 0.0).hypot(z - 1.2) > 6.5 {
+                    return self.send(cid, &json!({"t": "cookr", "rid": rid, "ok": false, "reason": "longe"}));
+                }
+                let g = self.guard.check(&pid);
+                if g["ok"] != true {
+                    return self.send(
+                        cid,
+                        &json!({"t": "cookr", "rid": rid, "ok": false, "reason": g["reason"], "wait": g["wait"]}),
+                    );
+                }
+                let origin = reg_day_key(&ip);
+                let fresh = !self.cook.has(&pid);
+                if fresh && !self.guard.may_open(&origin, "cook") {
+                    return self.send(cid, &json!({"t": "cookr", "rid": rid, "ok": false, "reason": "novos"}));
+                }
+                let ids: Vec<String> =
+                    m["g"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(str::to_owned)).collect();
+                let method = m["m"].as_str().unwrap_or("").to_owned();
+                let (guard, farm) = (&mut self.guard, &mut self.farm);
+                let mut gain = |p: &str, xp: f64, scale: f64| guard.factor(p, "cook", xp, scale);
+                let mut consume = |p: &str, ids: &[String]| farm.consume(p, ids);
+                let mut r = self.cook.cook(&pid, &method, &ids, &mut gain, &mut consume);
+                let ok = r["ok"] == true;
+                if ok {
+                    self.guard.act(&pid);
+                    if fresh {
+                        self.guard.opened(&origin, "cook");
+                    }
+                    let g: Vec<String> =
+                        r["g"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(str::to_owned)).collect();
+                    let home = self.farm.grown(&pid, &g);
+                    let base = r["coins"].as_f64().unwrap_or(0.0);
+                    let coins =
+                        self.farm.earn(&pid, (base * (1.0 + crate::farm::HOME_BONUS * home as f64)).round() as i64);
+                    r["home"] = json!(home);
+                    r["coins"] = json!(coins);
+                    r["wallet"] = self.farm.view(&pid)["coins"].clone();
+                    if let Some(o) = r.as_object_mut() {
+                        o.remove("g");
+                    }
+                    r["pantry"] = self.farm.view(&pid)["pantry"].clone();
+                    let fv = self.farm_view(&pid);
+                    self.send(cid, &fv);
+                }
+                let recipe = r["recipe"].clone();
+                r["t"] = json!("cookr");
+                r["rid"] = rid;
+                self.send(cid, &r);
+                if ok {
+                    self.bc(code, &json!({"t": "cookfx", "id": me, "r": recipe}), Some(cid));
+                }
+            }
+            "cookrenew" => {
+                let pid = self.owner_of(cid, "cook", COOK_MSG);
+                if pid.is_empty() {
+                    return;
+                }
+                let mut r = self.cook.renew(&pid);
+                let ok = r["ok"] == true;
+                let rank = r["rank"].clone();
+                r["t"] = json!("cookr");
+                r["rid"] = rid;
+                r["renew"] = json!(1);
+                self.send(cid, &r);
+                if ok {
+                    self.bc(code, &json!({"t": "cookfx", "id": me, "st": rank}), Some(cid));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `/profile.json`: o perfil público com emblemas e o resumo de cada parte do jogo.
+    pub fn profile_json(&self, pid: &str) -> Option<Value> {
+        let mut pr = self.pub_get(pid)?;
+        let mut extra = self.cook.badges_of(pid);
+        extra.extend(self.farm.badges_of(pid));
+        pr["badges"] = self.badges.of(pid, &pr, &extra);
+        pr["pet"] = Value::Null;
+        pr["farm"] = self.farm.public_of(pid);
+        pr["cook"] = self.cook.public_of(pid);
+        pr["health"] = json!({"ill": "", "tired": false, "until": 0});
+        pr["gifts"] = json!({"n": 0, "list": []});
+        Some(pr)
+    }
+
+    /// `/farm.json`: a fazenda de quem tem perfil público.
+    pub fn farm_json(&self, pid: &str) -> Option<Value> {
+        let pr = self.pub_get(pid)?;
+        let mut f = self.farm.public_of(pid);
+        f["name"] = pr["name"].clone();
+        Some(f)
     }
 }

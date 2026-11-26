@@ -193,9 +193,10 @@ mod tests {
         let bots = vec![Bot { id: "b1".into(), name: "Marina".into() }, Bot { id: "b2".into(), name: "Caio".into() }];
         let mut st = BotChat::default();
         let mut r = || 0.0;
-        assert!(st.hear("oi Caio, tudo bem?", &bots, 0.0, "Ana", &mut r));
-        assert!(st.tick(500.0, &bots, true, &mut r).is_none());
-        let (i, text) = st.tick(1000.0, &bots, true, &mut r).unwrap();
+        let t0 = 100_000.0;
+        assert!(st.hear("oi Caio, tudo bem?", &bots, t0, "Ana", &mut r));
+        assert!(st.tick(t0 + 500.0, &bots, true, &mut r).is_none());
+        let (i, text) = st.tick(t0 + 1000.0, &bots, true, &mut r).unwrap();
         assert_eq!(bots[i].id, "b2");
         assert_eq!(text, JOKES[0]);
         assert_eq!(normalize("Olá, João!"), "ola joao");
