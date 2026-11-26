@@ -359,6 +359,7 @@ async fn main() {
             }
             if n % 100 == 0 {
                 g.soc_tick();
+                g.health_tick();
             }
             if n % 300 == 0 {
                 for c in g.ping_round() {

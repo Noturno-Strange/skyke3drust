@@ -422,6 +422,9 @@ pub struct Game {
     pub cook: crate::cook::Cook,
     pub guard: crate::guard::Guard,
     pub badges: crate::badges::Badges,
+    pub health: crate::health::Health,
+    pub gifts: crate::gifts::Gifts,
+    health_seen: HashMap<String, String>,
     mute_salt: [u8; 16],
     tick_n: u64,
     pub started: u64,
@@ -510,6 +513,9 @@ impl Game {
             cook: crate::cook::Cook::new(&cfg.data_file("COOK_FILE", "cook.json")),
             guard: crate::guard::Guard::default(),
             badges: crate::badges::Badges::new(&cfg.data_file("BADGES_FILE", "badges.json")),
+            health: crate::health::Health::new(&cfg.data_file("HEALTH_FILE", "health.json")),
+            health_seen: HashMap::new(),
+            gifts: crate::gifts::Gifts::new(&cfg.data_file("GIFTS_FILE", "gifts.json")),
             mute_salt: crate::random_bytes::<16>(),
             tick_n: 0,
             started: crate::now(),
@@ -627,8 +633,11 @@ impl Game {
 
     // ---------- jogadores ----------
 
-    fn health_pub(&self, _p: &Player) -> Value {
-        json!({"ill": "", "tired": false, "until": 0})
+    fn health_pub(&self, p: &Player) -> Value {
+        match p.ident.as_ref().filter(|i| !i.id.is_empty()) {
+            Some(i) => self.health.public_of(&pid_of(&i.id)),
+            None => json!({"ill": "", "tired": false, "until": 0}),
+        }
     }
 
     pub fn pub_of(&self, p: &Player) -> Value {
@@ -1706,6 +1715,8 @@ impl Game {
             "farmget" | "farmdo" | "supply" | "cookget" | "cookdo" | "cookrenew" => {
                 self.economy_msg(cid, t, m, &code, &me)
             }
+            "healthget" | "medcraft" | "medheal" => self.health_msg(cid, t, m, &code, &me),
+            "giftget" | "giftsee" | "giftsend" | "giftdel" => self.gift_msg(cid, t, m),
             "freq" => self.soc_request(cid, m["to"].as_str().unwrap_or("")),
             "facc" => self.soc_accept(cid, m["to"].as_str().unwrap_or("")),
             "finv" => self.soc_invite(cid, m["to"].as_str().unwrap_or("")),
@@ -1855,6 +1866,8 @@ impl Game {
         self.player_data.tick(now);
         self.pubp.tick(now);
         self.farm.tick(now);
+        self.health.tick_file(now);
+        self.gifts.tick(now);
         self.cook.tick(now);
         self.badges.tick(now);
         let settled = std::mem::take(&mut self.identity.settled);
@@ -1901,6 +1914,8 @@ impl Game {
         self.player_data.flush();
         self.pubp.flush();
         self.farm.flush();
+        self.health.flush();
+        self.gifts.flush();
         self.cook.flush();
         self.badges.flush();
     }
@@ -1964,22 +1979,6 @@ pub fn st_pack(s: &[(String, f64, f64, f64, f64, bool)]) -> Vec<u8> {
         b.push(u8::from(*sit));
     }
     b
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn state_packet() {
-        let b = st_pack(&[("b7".into(), 1.234, -2.0, 7.0, 0.5, true)]);
-        assert_eq!(b.len(), 13);
-        assert_eq!(u32::from_le_bytes([b[1], b[2], b[3], b[4]]), 0x8000_0007);
-        assert_eq!(i16::from_le_bytes([b[5], b[6]]), 123);
-        assert_eq!(i16::from_le_bytes([b[9], b[10]]), ((7.0f64.sin().atan2(7.0f64.cos())) * 10000.0).round() as i16);
-        assert_eq!((b[11], b[12]), (50, 1));
-        assert_eq!(pid_of("abc").len(), 20);
-    }
 }
 
 impl Game {
@@ -2271,8 +2270,8 @@ impl Game {
         pr["pet"] = Value::Null;
         pr["farm"] = self.farm.public_of(pid);
         pr["cook"] = self.cook.public_of(pid);
-        pr["health"] = json!({"ill": "", "tired": false, "until": 0});
-        pr["gifts"] = json!({"n": 0, "list": []});
+        pr["health"] = self.health.public_of(pid);
+        pr["gifts"] = self.gifts.public_of(pid);
         Some(pr)
     }
 
@@ -2282,5 +2281,228 @@ impl Game {
         let mut f = self.farm.public_of(pid);
         f["name"] = pr["name"].clone();
         Some(f)
+    }
+}
+
+impl Game {
+    /// Relógio da saúde (a cada 10 s): um por pessoa, mesmo com várias abas.
+    pub fn health_tick(&mut self) {
+        let mut seen = HashSet::new();
+        let mut who: Vec<(String, bool)> = Vec::new();
+        for r in self.rooms.values() {
+            for p in r.players.values() {
+                if p.bot || !p.online {
+                    continue;
+                }
+                let Some(i) = p.ident.as_ref().filter(|i| !i.id.is_empty()) else { continue };
+                if seen.insert(pid_of(&i.id)) {
+                    who.push((i.id.clone(), p.s != 0));
+                }
+            }
+        }
+        for (id, sitting) in who {
+            let pid = pid_of(&id);
+            self.health.tick(&pid, if sitting { 0 } else { 10000 });
+            if self.health_seen.get(&pid) != Some(&self.health.public_of(&pid).to_string()) {
+                self.health_notify(&id);
+            }
+        }
+        self.health_seen.retain(|k, _| seen.contains(k));
+    }
+
+    fn health_notify(&mut self, id: &str) {
+        let pid = pid_of(id);
+        let status = self.health.public_of(&pid);
+        self.health_seen.insert(pid.clone(), status.to_string());
+        let mut view = self.health.view(&pid);
+        view["t"] = json!("health");
+        let mine: Vec<u64> =
+            self.conns.values().filter(|c| c.ident_scope == "primary" && c.ident_id == id).map(|c| c.id).collect();
+        for c in mine {
+            self.send(c, &view);
+        }
+        let mut targets = Vec::new();
+        for r in self.rooms.values() {
+            for p in r.players.values() {
+                if p.ident.as_ref().is_some_and(|i| i.id == id) {
+                    targets.push((r.code.clone(), p.id.clone()));
+                }
+            }
+        }
+        for (code, pid2) in targets {
+            let mut m = json!({"t": "healthstate", "id": pid2});
+            for (k, v) in status.as_object().into_iter().flatten() {
+                m[k] = v.clone();
+            }
+            self.bc(&code, &m, None);
+        }
+    }
+
+    fn health_msg(&mut self, cid: u64, t: &str, m: &Value, code: &str, me: &str) {
+        const MSG: &str = "Entre com sua identidade para cozinhar e guardar seu progresso.";
+        let pid = self.owner_of(cid, "cook", MSG);
+        if pid.is_empty() {
+            return;
+        }
+        let rid = m["rid"].clone();
+        let i = m["i"].as_str().unwrap_or("").to_owned();
+        match t {
+            "healthget" => {
+                let mut v = self.health.view(&pid);
+                v["t"] = json!("health");
+                self.send(cid, &v);
+            }
+            "medcraft" => {
+                let g = self.guard.check(&pid);
+                if g["ok"] != true {
+                    return self.send(cid, &json!({"t": "medr", "rid": rid, "ok": false, "reason": g["reason"]}));
+                }
+                let farm = &mut self.farm;
+                let mut consume = |p: &str, ids: &[String]| farm.consume(p, ids);
+                let mut r = self.health.craft(&pid, &i, &mut consume);
+                let ok = r["ok"] == true;
+                r["t"] = json!("medr");
+                r["rid"] = rid;
+                r["k"] = json!("craft");
+                r["i"] = json!(i);
+                self.send(cid, &r);
+                if ok {
+                    self.guard.act(&pid);
+                    let fv = self.farm_view(&pid);
+                    self.send(cid, &fv);
+                    let cv = self.cook_view(&pid);
+                    self.send(cid, &cv);
+                }
+            }
+            "medheal" => {
+                let to = m["to"].as_str().unwrap_or("");
+                let error = |g: &mut Game, reason: &str| {
+                    g.send(cid, &json!({"t": "medr", "rid": rid, "ok": false, "reason": reason}))
+                };
+                let Some(p) = self.rooms.get(code).and_then(|r| r.players.get(to)).cloned() else {
+                    return error(self, "alvo");
+                };
+                let Some(pi) = p.ident.clone().filter(|i| !p.bot && p.online && !i.id.is_empty()) else {
+                    return error(self, "alvo");
+                };
+                let my_id = self.conns.get(&cid).map(|c| c.ident_id.clone()).unwrap_or_default();
+                if pi.id == my_id {
+                    return error(self, "autocura");
+                }
+                let (mx, mz) = self.rooms.get(code).and_then(|r| r.players.get(me)).map_or((0.0, 0.0), |x| (x.x, x.z));
+                if (mx - p.x).hypot(mz - p.z) > 3.0 {
+                    return error(self, "longe");
+                }
+                let friends = |d: Option<Value>, other: &str| {
+                    d.is_some_and(|d| d["friends"].as_array().is_some_and(|a| a.iter().any(|x| x == other)))
+                };
+                if !(friends(self.player_data.get(&my_id), &pi.id) && friends(self.player_data.get(&pi.id), &my_id)) {
+                    return error(self, "amigo");
+                }
+                let mut r = self.health.heal(&pid, &pid_of(&pi.id), &i);
+                let ok = r["ok"] == true;
+                r["t"] = json!("medr");
+                r["rid"] = rid.clone();
+                r["k"] = json!("heal");
+                r["i"] = json!(i);
+                self.send(cid, &r);
+                if !ok {
+                    return;
+                }
+                self.health_notify(&pi.id);
+                self.bc(code, &json!({"t": "medfx", "id": me, "to": p.id, "i": i}), None);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Game {
+    /// Presentes: a caixa, ver a de outro, enviar e apagar.
+    fn gift_msg(&mut self, cid: u64, t: &str, m: &Value) {
+        const MSG: &str = "Entre com sua identidade para enviar e receber presentes.";
+        let merge = |mut a: Value, b: Value| {
+            for (k, v) in b.as_object().into_iter().flatten() {
+                a[k] = v.clone();
+            }
+            a
+        };
+        match t {
+            "giftsee" => {
+                let to = m["to"].as_str().unwrap_or("");
+                let out = match self.pub_get(to) {
+                    Some(pr) => merge(json!({"t": "giftbox", "to": to, "name": pr["name"]}), self.gifts.public_of(to)),
+                    None => json!({"t": "giftbox", "to": to, "none": 1}),
+                };
+                self.send(cid, &out);
+            }
+            "giftget" | "giftdel" => {
+                let pid = self.owner_of(cid, "gift", MSG);
+                if pid.is_empty() {
+                    return;
+                }
+                if t == "giftget" && m["seen"] == true {
+                    self.gifts.seen(&pid);
+                }
+                if t == "giftdel" {
+                    self.gifts.remove(&pid, m["id"].as_i64().unwrap_or(0));
+                }
+                let q = self.gifts.quota(&pid);
+                let out = merge(merge(json!({"t": "gifts"}), self.gifts.box_of(&pid)), q);
+                self.send(cid, &out);
+            }
+            "giftsend" => {
+                let pid = self.owner_of(cid, "gift", MSG);
+                if pid.is_empty() {
+                    return;
+                }
+                let (to, k, i) =
+                    (m["to"].as_str().unwrap_or(""), m["k"].as_str().unwrap_or(""), m["i"].as_str().unwrap_or(""));
+                let can = if k == "c" { self.farm.harvested(&pid, i) } else { self.cook.unlocked(&pid, i) };
+                let name = self.me_info(cid).map(|x| x.0).unwrap_or_default();
+                let r = if self.pubp.has(to) {
+                    self.gifts.send(&pid, to, k, i, &name, can)
+                } else {
+                    json!({"ok": false, "reason": "sem_perfil"})
+                };
+                let q = self.gifts.quota(&pid);
+                let ok = r["ok"] == true;
+                let gift = r["gift"].clone();
+                let out = merge(merge(json!({"t": "giftr", "rid": m["rid"], "to": to}), r), q);
+                self.send(cid, &out);
+                if !ok {
+                    return;
+                }
+                let unseen = self.gifts.unseen(to);
+                let targets: Vec<u64> = self
+                    .conns
+                    .values()
+                    .filter(|c| {
+                        c.id != cid && c.ident_scope == "primary" && !c.ident_id.is_empty() && pid_of(&c.ident_id) == to
+                    })
+                    .map(|c| c.id)
+                    .collect();
+                for w in targets {
+                    self.send(w, &json!({"t": "giftin", "n": gift["n"], "k": gift["k"], "i": gift["i"], "at": gift["at"], "unseen": unseen}));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_packet() {
+        let b = st_pack(&[("b7".into(), 1.234, -2.0, 7.0, 0.5, true)]);
+        assert_eq!(b.len(), 13);
+        assert_eq!(u32::from_le_bytes([b[1], b[2], b[3], b[4]]), 0x8000_0007);
+        assert_eq!(i16::from_le_bytes([b[5], b[6]]), 123);
+        assert_eq!(i16::from_le_bytes([b[9], b[10]]), ((7.0f64.sin().atan2(7.0f64.cos())) * 10000.0).round() as i16);
+        assert_eq!((b[11], b[12]), (50, 1));
+        assert_eq!(pid_of("abc").len(), 20);
     }
 }
