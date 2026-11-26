@@ -112,6 +112,7 @@ fn finish_connect(
     mut err: ResMut<ConnectError>,
     mut next: ResMut<NextState<Screen>>,
     kit: Option<Res<AvatarKit>>,
+    my: Option<Res<crate::editor::MyLook>>,
 ) {
     let Some(p) = pending else { return };
     let r = p.0.lock().ok().and_then(|rx| rx.try_recv().ok());
@@ -144,6 +145,13 @@ fn finish_connect(
         max: j.max,
         my_name: j.me.name.clone(),
     };
+    // conta criada agora: o código de recuperação aparece para o jogador guardar (só na memória)
+    if let (Some(acc), Some(my)) = (&h.new_account, &my) {
+        match crate::recovery::code_for(acc, &j.me.name, &my.cfg) {
+            Some(c) => commands.insert_resource(c),
+            None => error!("não foi possível montar o código de recuperação"),
+        }
+    }
     let me_id = j.id;
     commands.insert_resource(Net { h: Mutex::new(h), actors, me: me_id, last_sent: None, send_t: 0.0 });
     next.set(Screen::Playing);

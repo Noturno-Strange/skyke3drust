@@ -86,8 +86,27 @@ pub enum NetEvent {
 #[derive(Debug)]
 pub struct NetHandle {
     pub joined: Box<Joined>,
+    /// Conta criada agora: a chave de recuperação (só na memória) para a interface mostrar o código de recuperação.
+    pub new_account: Option<NewAccount>,
     out: mpsc::UnboundedSender<Message>,
     pub events: mpsc::UnboundedReceiver<NetEvent>,
+}
+
+/// Identidade registrada nesta conexão. A chave privada de recuperação nunca vai para o disco: a interface monta com
+/// ela o código de recuperação, mostra ao jogador e descarta.
+#[derive(Clone)]
+pub struct NewAccount {
+    pub id: String,
+    /// Chave do aparelho (vai no código como chave de amigo, como `deviceKey()` no navegador).
+    pub k: String,
+    /// Chave privada de recuperação em PKCS#8 DER.
+    pub recovery_pkcs8: Vec<u8>,
+}
+
+impl std::fmt::Debug for NewAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewAccount").field("id", &self.id).finish_non_exhaustive()
+    }
 }
 
 impl NetHandle {
@@ -212,7 +231,7 @@ fn server_err(scope_prefix: &[&str], m: &ServerMsg) -> Option<NetError> {
 }
 
 /// Registra a identidade deste aparelho na primeira vez.
-async fn enroll(c: &mut Conn) -> Result<StoredIdentity, NetError> {
+async fn enroll(c: &mut Conn) -> Result<(StoredIdentity, NewAccount), NetError> {
     let k = sky_identity::new_device_key();
     let primary = KeyPair::generate();
     let recovery = KeyPair::generate();
@@ -236,19 +255,23 @@ async fn enroll(c: &mut Conn) -> Result<StoredIdentity, NetError> {
                 }
                 let primary_b64 =
                     primary.to_pkcs8().map(|d| base64_url(&d)).map_err(|e| NetError::Identity(e.to_string()))?;
-                // A chave de recuperação NÃO é gravada. Enquanto o código de recuperação não é exibido pela interface
-                // nativa, ela se perde ao fechar o jogo; ver docs/estado-da-migracao.md.
+                // A chave de recuperação NÃO é gravada: volta só na memória, para a interface mostrar o código.
+                let recovery_pkcs8 = recovery.to_pkcs8().map_err(|e| NetError::Identity(e.to_string()))?;
                 drop(recovery);
-                return Ok(StoredIdentity {
-                    v: 1,
-                    k,
-                    id,
-                    pk,
-                    rpk,
-                    generation: raw.get("gen").and_then(|v| v.as_u64()).unwrap_or(0),
-                    epoch: raw.get("epoch").and_then(|v| v.as_u64()).unwrap_or(0),
-                    primary: primary_b64,
-                });
+                let acc = NewAccount { id: id.clone(), k: k.clone(), recovery_pkcs8 };
+                return Ok((
+                    StoredIdentity {
+                        v: 1,
+                        k,
+                        id,
+                        pk,
+                        rpk,
+                        generation: raw.get("gen").and_then(|v| v.as_u64()).unwrap_or(0),
+                        epoch: raw.get("epoch").and_then(|v| v.as_u64()).unwrap_or(0),
+                        primary: primary_b64,
+                    },
+                    acc,
+                ));
             }
             Err(ServerMsg::Err { code, raw, msg, .. }) if code == "pow" => {
                 let bits = raw.get("bits").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
@@ -313,12 +336,14 @@ pub async fn connect(cfg: ConnectConfig) -> Result<NetHandle, NetError> {
         .map_err(|e| NetError::Ws(e.to_string()))?;
     let mut c = Conn { ws };
 
+    let mut new_account = None;
     let mut ident = match StoredIdentity::load(&cfg.identity_path) {
         Some(i) => i,
         None => {
-            let i = enroll(&mut c).await?;
+            let (i, acc) = enroll(&mut c).await?;
             i.save(&cfg.identity_path).map_err(|e| NetError::Identity(e.to_string()))?;
             tracing::info!("identidade nova registrada: {}", i.id);
+            new_account = Some(acc);
             i
         }
     };
@@ -360,7 +385,7 @@ pub async fn connect(cfg: ConnectConfig) -> Result<NetHandle, NetError> {
     let (out_tx, out_rx) = mpsc::unbounded_channel();
     let (ev_tx, ev_rx) = mpsc::unbounded_channel();
     tokio::spawn(pump(c.ws, out_rx, ev_tx));
-    Ok(NetHandle { joined, out: out_tx, events: ev_rx })
+    Ok(NetHandle { joined, new_account, out: out_tx, events: ev_rx })
 }
 
 async fn pump(ws: Ws, mut out: mpsc::UnboundedReceiver<Message>, ev: mpsc::UnboundedSender<NetEvent>) {

@@ -78,6 +78,8 @@ fn random32() -> [u8; 32] {
 }
 
 /// Cargas canônicas assinadas (iguais às de `assets/identity.js`).
+pub mod recovery;
+
 pub mod payload {
     use super::DOMAIN;
 

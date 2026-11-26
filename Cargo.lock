@@ -5809,6 +5809,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sky-avatars",
+ "sky-identity",
  "sky-networking",
  "sky-persistence",
  "sky-protocol",

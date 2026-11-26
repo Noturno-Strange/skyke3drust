@@ -68,9 +68,9 @@ Para reproduzir: ver [ferramentas.md](ferramentas.md).
 
 ## Limitações importantes agora
 
-* **Código de recuperação**: o cliente nativo ainda não exibe o código de recuperação. Uma identidade criada por ele
-  só existe naquele computador; se o arquivo for perdido, a conta também é. Até a tela de recuperação ser migrada,
-  use o cliente nativo para testes.
+* **Código de recuperação**: ao criar a conta, o cliente nativo mostra o código de recuperação v2 (o mesmo formato do
+  navegador, conferido byte a byte com `recovery.js`), com 📋 Copiar; a chave de recuperação fica só na memória. A
+  recuperação num aparelho novo (colar o código, prazo de carência, troca de chaves) ainda é feita pelo navegador.
 * Cada jogador aparece com o próprio rosto, pele, olhos, cabelo ou chapéu, roupa, bermuda, bota e cores brilhantes
   (`cfg`). O visual é escolhido no editor 👕, fica salvo em
   `skyke3d/online/visual.json` e vai ao servidor a cada mudança; o efeito do nome (`nf`) é guardado mas ainda não é

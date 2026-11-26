@@ -18,6 +18,7 @@ mod look;
 mod menu;
 mod net;
 mod player;
+mod recovery;
 mod shot;
 mod state;
 
@@ -64,7 +65,7 @@ fn main() {
         net::NetPlugin,
         hud::HudPlugin,
     ))
-    .add_plugins((anim::AnimPlugin, gestures::GesturePlugin, editor::EditorPlugin))
+    .add_plugins((anim::AnimPlugin, gestures::GesturePlugin, editor::EditorPlugin, recovery::RecoveryPlugin))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))
     .insert_resource(a.clone())
