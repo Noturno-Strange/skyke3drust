@@ -193,7 +193,7 @@ fn search(q: Query<&EditableText, (With<BackpackSearch>, Changed<EditableText>)>
 }
 
 /// Sem acento e em minúsculas, para a busca (`norm` no original).
-fn norm(s: &str) -> String {
+pub fn norm(s: &str) -> String {
     s.to_lowercase()
         .chars()
         .map(|c| match c {

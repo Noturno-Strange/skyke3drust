@@ -159,7 +159,15 @@ pub fn spawn(commands: &mut Commands, t: &Theme, f: &UiFonts, cat: &EditorCatalo
     let bp = button(commands, t, f, "🎒", false);
     commands.entity(bp).observe(crate::backpack::on_toggle);
 
-    commands.entity(bar).add_children(&[emo, bp, pl, inv, set, exit]);
+    // 🌱 fazenda
+    let fm = button(commands, t, f, "🌱", false);
+    commands.entity(fm).observe(crate::farm::on_toggle);
+
+    // 🍳 culinária
+    let ck = button(commands, t, f, "🍳", false);
+    commands.entity(ck).observe(crate::cook::on_toggle);
+
+    commands.entity(bar).add_children(&[emo, bp, ck, fm, pl, inv, set, exit]);
     commands.entity(root).add_children(&[ep, pp]);
 }
 

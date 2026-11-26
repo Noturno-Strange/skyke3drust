@@ -113,6 +113,10 @@ impl NetHandle {
     pub fn send(&self, m: &ClientMsg) {
         let _ = self.out.send(Message::text(m.to_json()));
     }
+    /// Mensagem de jogo montada como JSON (fazenda, culinária...): o servidor valida cada campo.
+    pub fn send_json(&self, v: &serde_json::Value) {
+        let _ = self.out.send(Message::text(v.to_string()));
+    }
     pub fn send_binary(&self, b: Vec<u8>) {
         let _ = self.out.send(Message::binary(b));
     }

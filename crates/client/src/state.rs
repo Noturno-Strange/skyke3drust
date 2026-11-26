@@ -74,6 +74,22 @@ pub struct SendGesture(pub String);
 #[derive(Message, Debug, Clone)]
 pub struct SendMsg(pub sky_protocol::ClientMsg);
 
+/// Mensagem de jogo em JSON para o servidor (`{t:'farmdo', ...}`); sem conexão, é descartada.
+#[derive(Message, Debug, Clone)]
+pub struct SendRaw(pub serde_json::Value);
+
+/// Mensagem do servidor que o núcleo não trata (fazenda, culinária...), para os módulos de jogo.
+#[derive(Message, Debug, Clone)]
+pub struct ServerOther {
+    pub t: String,
+    pub raw: serde_json::Value,
+}
+
+/// Id de pedido (`rid`): 16 letras base64url, como o `rid()` do original.
+pub fn rid() -> String {
+    sky_identity::new_device_key().chars().take(16).collect()
+}
+
 /// Id do ator na sala (nos avatares dos outros jogadores).
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NetId(pub sky_shared::ActorId);

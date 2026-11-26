@@ -12,7 +12,9 @@
 mod anim;
 mod args;
 mod backpack;
+mod cook;
 mod editor;
+mod farm;
 mod gestures;
 mod hud;
 mod look;
@@ -62,6 +64,8 @@ fn main() {
     .add_message::<SendGesture>()
     .add_message::<SendCfg>()
     .add_message::<state::SendMsg>()
+    .add_message::<state::SendRaw>()
+    .add_message::<state::ServerOther>()
     .add_plugins((WorldPlugin { assets_dir: assets.clone() }, sky_ui::SkyUiPlugin))
     .add_plugins((
         look::LookPlugin { assets_dir: assets.clone() },
@@ -77,10 +81,14 @@ fn main() {
         social::SocialPlugin,
         settings::SettingsPlugin,
         backpack::BackpackPlugin,
+        farm::FarmPlugin,
+        cook::CookPlugin,
     ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))
     .insert_resource(load_items(&assets))
+    .insert_resource(load_catalog::<farm::FarmCatalog>(&assets, "fazenda", farm::FarmCatalog::from_catalog_json))
+    .insert_resource(load_catalog::<cook::CookCatalog>(&assets, "culinária", cook::CookCatalog::from_catalog_json))
     .insert_resource(a.clone())
     .add_systems(Startup, setup)
     .add_systems(OnEnter(Screen::Playing), start_gesture);
@@ -126,6 +134,21 @@ fn setup(
     } else if a.explore {
         load.write(LoadWorld(a.world));
         next.set(Screen::Playing);
+    }
+}
+
+fn load_catalog<T: Default>(
+    assets: &std::path::Path,
+    what: &str,
+    parse: fn(&[u8]) -> Result<T, serde_json::Error>,
+) -> T {
+    let p = assets.join("../data/catalogs/catalog.json");
+    match std::fs::read(&p).map_err(|e| e.to_string()).and_then(|b| parse(&b).map_err(|e| e.to_string())) {
+        Ok(c) => c,
+        Err(e) => {
+            error!("{what}: catálogo em {}: {e}", p.display());
+            T::default()
+        }
     }
 }
 

@@ -19,7 +19,7 @@ impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (start, finish_connect, receive, send_moves, send_chat, send_gesture, send_cfg, send_msgs),
+            (start, finish_connect, receive, send_moves, send_chat, send_gesture, send_cfg, send_msgs, send_raw),
         )
         .add_systems(OnExit(Screen::Playing), leave);
     }
@@ -171,6 +171,7 @@ struct Social<'w, 's> {
     cat: Res<'w, crate::editor::EditorCatalog>,
     me: Query<'w, 's, Entity, With<Me>>,
     items: Res<'w, crate::backpack::ItemCatalog>,
+    other: MessageWriter<'w, crate::state::ServerOther>,
     held: Query<'w, 's, &'static crate::backpack::Held>,
 }
 
@@ -275,6 +276,9 @@ fn receive(
             }
             NetEvent::Server(ServerMsg::Gsys { text }) => social.global.log.push("", text, true),
             NetEvent::Server(ServerMsg::Gn { n }) => social.global.people = n,
+            NetEvent::Server(ServerMsg::Other { t, raw }) => {
+                social.other.write(crate::state::ServerOther { t, raw });
+            }
             NetEvent::Server(ServerMsg::Item { id, item, use_ }) => {
                 let ent = if id == net.me { social.me.single().ok() } else { net.actors.get(&id).copied() };
                 if let Some(ent) = ent {
@@ -392,6 +396,16 @@ fn send_msgs(mut msgs: MessageReader<crate::state::SendMsg>, net: Option<Res<Net
             && let Ok(h) = net.h.lock()
         {
             h.send(m);
+        }
+    }
+}
+
+fn send_raw(mut msgs: MessageReader<crate::state::SendRaw>, net: Option<Res<Net>>) {
+    for crate::state::SendRaw(v) in msgs.read() {
+        if let Some(net) = &net
+            && let Ok(h) = net.h.lock()
+        {
+            h.send_json(v);
         }
     }
 }
