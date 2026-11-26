@@ -24,6 +24,7 @@ sky-rendering.workspace = true
 sky-world.workspace = true
 sky-ui.workspace = true
 sky-avatars.workspace = true
+sky-persistence.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sky-security.workspace = true

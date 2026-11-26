@@ -1,0 +1,80 @@
+name: Release
+
+# Uma tag `vX.Y.Z` compila o cliente em modo release para Linux e Windows e publica os pacotes numa Release do GitHub.
+# Cada pacote traz o executável com `assets/` e `data/` ao lado (o cliente procura `assets/` junto do executável e o
+# catálogo em `assets/../data`), a licença e os créditos.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Pacote ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+            exe: skyke3d
+          - os: windows-latest
+            target: windows-x86_64
+            exe: skyke3d.exe
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Dependências de sistema (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libfontconfig1-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p sky-client --bin skyke3d
+      - name: Montar o pacote
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="skyke3d-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir "$dir"
+          cp "target/release/${{ matrix.exe }}" "$dir/"
+          cp -r assets data "$dir/"
+          rm -rf "$dir/assets/avatars/ref-head"
+          cp LICENSE THIRD-PARTY.md README.md "$dir/"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip "$dir.zip" "$dir" > /dev/null
+            echo "PKG=$dir.zip" >> "$GITHUB_ENV"
+          else
+            tar czf "$dir.tar.gz" "$dir"
+            echo "PKG=$dir.tar.gz" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.PKG }}
+          if-no-files-found: error
+
+  publish:
+    name: Publicar a Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Criar a Release com os pacotes e as somas SHA-256
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum * > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" * --repo "$GITHUB_REPOSITORY" --title "Skyke3D nativo $GITHUB_REF_NAME" --generate-notes

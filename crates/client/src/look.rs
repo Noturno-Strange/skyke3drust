@@ -26,6 +26,7 @@ impl Plugin for LookPlugin {
     fn build(&self, app: &mut App) {
         match AvatarKit::load(&self.assets_dir) {
             Ok(kit) => {
+                app.insert_resource(crate::editor::MyLook::load(&kit));
                 app.insert_resource(kit).add_systems(Update, (apply_looks, mouths.after(apply_looks)));
             }
             Err(e) => error!("avatares: {e}"),

@@ -68,6 +68,20 @@ impl ChatLog {
 #[derive(Message, Debug, Clone)]
 pub struct SendGesture(pub String);
 
+/// Visual novo do jogador para enviar ao servidor (`{t:'cfg'}`).
+#[derive(Message, Debug, Clone)]
+pub struct SendCfg(pub std::collections::BTreeMap<String, u32>);
+
+/// Pasta de dados do jogo (`$XDG_DATA_HOME/skyke3d`, `%APPDATA%\skyke3d` ou `~/.local/share/skyke3d`).
+pub fn data_dir() -> std::path::PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share")))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("skyke3d")
+}
+
 /// Mensagem de chat que o jogador quer enviar.
 #[derive(Message, Debug, Clone)]
 pub struct SendChat(pub String);

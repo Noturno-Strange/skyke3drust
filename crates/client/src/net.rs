@@ -3,7 +3,7 @@
 use crate::gestures::{Gesture, GestureCatalog};
 use crate::look::{AvatarKit, AvatarLook};
 use crate::player::{Me, Remote, avatar_scene};
-use crate::state::{ActorName, ChatLog, ConnectError, ConnectRequest, Screen, SendChat, SendGesture, Session};
+use crate::state::{ActorName, ChatLog, ConnectError, ConnectRequest, Screen, SendCfg, SendChat, SendGesture, Session};
 use bevy::prelude::*;
 use sky_networking::{ConnectConfig, Enter, NetEvent, NetHandle};
 use sky_protocol::{ClientMsg, PlayerPub, ServerMsg};
@@ -17,7 +17,7 @@ pub struct NetPlugin;
 
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (start, finish_connect, receive, send_moves, send_chat, send_gesture))
+        app.add_systems(Update, (start, finish_connect, receive, send_moves, send_chat, send_gesture, send_cfg))
             .add_systems(OnExit(Screen::Playing), leave);
     }
 }
@@ -38,12 +38,7 @@ struct Net {
 }
 
 fn identity_path() -> std::path::PathBuf {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share")))
-        .unwrap_or_else(std::env::temp_dir)
-        .join("skyke3d/online/identidade.json")
+    crate::state::data_dir().join("online/identidade.json")
 }
 
 fn start(
@@ -52,6 +47,7 @@ fn start(
     rt: Option<Res<Runtime>>,
     mut s: ResMut<Session>,
     kit: Option<Res<AvatarKit>>,
+    my: Option<Res<crate::editor::MyLook>>,
 ) {
     let Some(r) = reqs.read().last().cloned() else { return };
     let runtime = match rt {
@@ -74,7 +70,7 @@ fn start(
         identity_path: identity_path(),
         name: r.name,
         // o visual deste avatar (o mesmo que aparece aqui), para os outros verem igual
-        cfg: kit.map(|k| k.reference_map()).unwrap_or_default(),
+        cfg: my.map(|m| m.cfg.0.clone()).or_else(|| kit.map(|k| k.reference_map())).unwrap_or_default(),
         enter: match r.join {
             Some(code) => Enter::Join { code },
             None => Enter::Create { world: r.world, bots: r.bots },
@@ -326,6 +322,17 @@ fn send_gesture(
             && let Ok(h) = net.h.lock()
         {
             h.send(&ClientMsg::Gest { g: g.clone() });
+        }
+    }
+}
+
+/// Visual novo do jogador (o editor já aplicou aqui e espera 250 ms entre mudanças).
+fn send_cfg(mut msgs: MessageReader<SendCfg>, net: Option<Res<Net>>) {
+    for SendCfg(cfg) in msgs.read() {
+        if let Some(net) = &net
+            && let Ok(h) = net.h.lock()
+        {
+            h.send(&ClientMsg::Cfg { cfg: cfg.clone() });
         }
     }
 }

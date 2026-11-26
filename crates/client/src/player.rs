@@ -96,11 +96,11 @@ pub fn avatar_scene(assets: &AssetServer) -> WorldAssetRoot {
     WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("avatars/default.glb")))
 }
 
-fn spawn_me(mut commands: Commands, assets: Res<AssetServer>, kit: Option<Res<crate::look::AvatarKit>>) {
+fn spawn_me(mut commands: Commands, assets: Res<AssetServer>, my: Option<Res<crate::editor::MyLook>>) {
     let mut e =
         commands.spawn((Me::default(), avatar_scene(&assets), Transform::from_xyz(0.0, 0.0, 5.0), Name::new("eu")));
-    if let Some(kit) = kit {
-        e.insert(crate::look::AvatarLook(kit.reference.clone()));
+    if let Some(my) = my {
+        e.insert(crate::look::AvatarLook(my.cfg.clone()));
     }
 }
 

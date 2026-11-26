@@ -12,14 +12,14 @@ sem teste funcional; a coluna "Validação" diz como cada item foi conferido.
 | 3 | Ferramentas de exportação dos recursos gráficos | feito: `tools/asset-exporter` (6 mundos, céu, sprites, avatar de referência, metadados, capturas) |
 | 4 | Protótipo Bevy com um cenário original | feito: os 6 mundos abrem no cliente nativo com os modelos originais |
 | 5 | Materiais, iluminação e shaders toon | feito: toon, contorno, domo do céu, chão, neblina, sprites e sombras; ajustes finos na lista abaixo |
-| 6 | Avatares, personalização e animações | em andamento: rosto e cabeça portados (idênticos ao navegador, pixel a pixel, em 16 casos), cores de pele, roupa e calçado, 34 cabelos e 3 chapéus (geometria exportada; cores portadas e iguais às do navegador até o último bit de f32), corpo inteiro gerado (tronco, braços, pernas e pés com bermuda e bota; `bandG`, `tubeG` e `ballsGeo` portados, iguais ao export do navegador), cores brilhantes, contornos e o emissivo dos avatares (`EMI`); boca que abre nos gestos; andar, pular, sentar e os 30 gestos e danças portados (`animA`, `DANCES`), com painel 🎭; falta o editor de visual |
+| 6 | Avatares, personalização e animações | em andamento: rosto e cabeça portados (idênticos ao navegador, pixel a pixel, em 16 casos), cores de pele, roupa e calçado, 34 cabelos e 3 chapéus (geometria exportada; cores portadas e iguais às do navegador até o último bit de f32), corpo inteiro gerado (tronco, braços, pernas e pés com bermuda e bota; `bandG`, `tubeG` e `ballsGeo` portados, iguais ao export do navegador), cores brilhantes, contornos e o emissivo dos avatares (`EMI`); boca que abre nos gestos; editor de visual (👕: abas, estilos, paletas, cores brilhantes, cor do nome), salvo em disco e enviado ao servidor; andar, pular, sentar e os 30 gestos e danças portados (`animA`, `DANCES`), com painel 🎭 |
 | 7 | Interface original | em andamento: tela inicial (nome, mundo, bots, servidor, criar, entrar, explorar), código da sala e lotação, chat da sala e nomes sobre os avatares, com as cores e a fonte do original; faltam a barra de botões e os painéis |
 | 8 | Compatibilidade com o servidor existente | núcleo feito: ticket, identidade, entrar/criar sala, posições, eventos de sala |
 | 9 | Gameplay e Rhai | sandbox Rhai pronta; sistemas de gameplay pendentes |
 | 10 | Áudio, voz, rádio e karaokê | pendente (protocolo de voz já decodificado) |
 | 11 | Servidor Rust | pendente (o Node.js continua sendo a autoridade) |
 | 12 | Testes de segurança, desempenho e compatibilidade | parcial: testes unitários, interoperabilidade com o Node, comparador visual |
-| 13 | Binários Linux e Windows | CI compila e testa; publicação em Releases pendente |
+| 13 | Binários Linux e Windows | feito: CI compila e testa; cada tag `v*` publica pacotes Linux e Windows numa Release (`.github/workflows/release.yml`) |
 
 ## Fidelidade visual medida
 
@@ -72,13 +72,14 @@ Para reproduzir: ver [ferramentas.md](ferramentas.md).
   só existe naquele computador; se o arquivo for perdido, a conta também é. Até a tela de recuperação ser migrada,
   use o cliente nativo para testes.
 * Cada jogador aparece com o próprio rosto, pele, olhos, cabelo ou chapéu, roupa, bermuda, bota e cores brilhantes
-  (`cfg`). O cliente nativo envia ao servidor o visual do avatar de referência (falta o
-  editor de visual).
+  (`cfg`). O visual é escolhido no editor 👕, fica salvo em
+  `skyke3d/online/visual.json` e vai ao servidor a cada mudança; o efeito do nome (`nf`) é guardado mas ainda não é
+  desenhado.
 * Interface parcial: tela inicial, chat da sala e nomes já existem; barra de botões, painéis (mochila, fazenda, culinária, amigos, ajustes) e chat global ainda não.
 
 ## Próximos passos
 
-1. Editor de visual e boca que abre ao falar (depende da voz).
+1. Efeitos do nome (`nf`) e boca que abre ao falar (depende da voz).
 2. Fauna, partículas e efeitos (chamas, brasas, chuva, estrela cadente), com comportamentos em Rhai.
 3. Resto da interface: barra de botões, painéis arrastáveis, chat global, ajustes (tema, escala, alto contraste).
 4. Sistemas de culinária e fazenda do lado do cliente, a partir do catálogo já exportado (`data/catalogs/catalog.json`).

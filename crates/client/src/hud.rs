@@ -19,7 +19,7 @@ impl Plugin for HudPlugin {
             .add_systems(OnExit(Screen::Playing), (despawn::<HudRoot>, despawn::<NameTag>))
             .add_systems(
                 Update,
-                (chat_keys, refresh_log, refresh_room, spawn_tags, place_tags, stop_gesture_on_walk)
+                (chat_keys, refresh_log, refresh_room, spawn_tags, place_tags, tag_colors, stop_gesture_on_walk)
                     .run_if(in_state(Screen::Playing)),
             );
     }
@@ -39,6 +39,9 @@ struct RoomText;
 /// Rótulo de nome que segue um ator.
 #[derive(Component)]
 struct NameTag(Entity);
+/// Texto do rótulo de nome (a cor segue o `nc` do visual).
+#[derive(Component)]
+struct NameTagText(Entity);
 #[derive(Component)]
 struct HasTag;
 
@@ -111,13 +114,13 @@ fn spawn_hud(
     commands.entity(chat).add_children(&[title, logbox, input]);
     commands.entity(root).add_children(&[room, chat]);
 
-    // barra de baixo (`#bar`): por enquanto o botão de gestos
+    // barra de baixo (`#bar`): gestos e editor de visual
     let bar = commands
         .spawn(Node {
             position_type: PositionType::Absolute,
             bottom: Val::Px(12.0),
             left: Val::Percent(50.0),
-            margin: UiRect::left(Val::Px(-30.0)),
+            margin: UiRect::left(Val::Px(-56.0)),
             column_gap: Val::Px(8.0),
             ..default()
         })
@@ -128,7 +131,11 @@ fn spawn_hud(
             n.display = if n.display == Display::None { Display::Flex } else { Display::None };
         }
     });
-    commands.entity(bar).add_child(gb);
+    let eb = button(&mut commands, &t, &f, "👕", false);
+    commands.entity(eb).observe(|_: On<Activate>, mut q: Query<&mut Node, With<crate::editor::EditorPanel>>| {
+        crate::editor::toggle(&mut q);
+    });
+    commands.entity(bar).add_children(&[gb, eb]);
     // painel de gestos: os 30 do catálogo, com ícone e nome
     let gp = commands
         .spawn(panel(&t))
@@ -271,7 +278,7 @@ fn spawn_tags(
                 Pickable::IGNORE,
             ))
             .with_children(|c| {
-                c.spawn((Text::new(n.0.clone()), f.font(13.0, 600), TextColor(t.fg)));
+                c.spawn((Text::new(n.0.clone()), f.font(13.0, 600), TextColor(t.fg), NameTagText(e)));
             });
     }
 }
@@ -309,5 +316,24 @@ fn stop_gesture_on_walk(me: Query<(&Me, Has<Gesture>)>, mut send: MessageWriter<
         && has
     {
         send.write(SendGesture("stop".into()));
+    }
+}
+
+/// Cor do nome escolhida no editor (`nc`, paleta `NCOL`; a 0 é a do tema). O efeito (`nf`) ainda não é desenhado.
+fn tag_colors(
+    t: Res<Theme>,
+    cat: Res<crate::editor::EditorCatalog>,
+    looks: Query<&crate::look::AvatarLook>,
+    changed: Query<(), Changed<crate::look::AvatarLook>>,
+    mut tags: Query<(&NameTagText, &mut TextColor, Ref<NameTagText>)>,
+) {
+    for (tag, mut c, r) in &mut tags {
+        if !r.is_added() && !changed.contains(tag.0) {
+            continue;
+        }
+        let want = looks.get(tag.0).ok().and_then(|l| cat.name_color(l.0.get("nc"))).unwrap_or(t.fg);
+        if c.0 != want {
+            c.0 = want;
+        }
     }
 }

@@ -11,6 +11,7 @@
 
 mod anim;
 mod args;
+mod editor;
 mod gestures;
 mod hud;
 mod look;
@@ -24,7 +25,7 @@ use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use sky_world::{LoadWorld, WorldPlugin};
-use state::{ChatLog, ConnectError, ConnectRequest, Screen, SendChat, SendGesture, Session};
+use state::{ChatLog, ConnectError, ConnectRequest, Screen, SendCfg, SendChat, SendGesture, Session};
 
 fn main() {
     let a = match args::Args::parse(std::env::args().skip(1)) {
@@ -55,6 +56,7 @@ fn main() {
     .add_message::<ConnectRequest>()
     .add_message::<SendChat>()
     .add_message::<SendGesture>()
+    .add_message::<SendCfg>()
     .add_plugins((WorldPlugin { assets_dir: assets.clone() }, sky_ui::SkyUiPlugin))
     .add_plugins((
         look::LookPlugin { assets_dir: assets.clone() },
@@ -62,8 +64,9 @@ fn main() {
         net::NetPlugin,
         hud::HudPlugin,
     ))
-    .add_plugins((anim::AnimPlugin, gestures::GesturePlugin))
+    .add_plugins((anim::AnimPlugin, gestures::GesturePlugin, editor::EditorPlugin))
     .insert_resource(load_gestures(&assets))
+    .insert_resource(load_editor_catalog(&assets))
     .insert_resource(a.clone())
     .add_systems(Startup, setup)
     .add_systems(OnEnter(Screen::Playing), start_gesture);
@@ -110,6 +113,14 @@ fn setup(
         load.write(LoadWorld(a.world));
         next.set(Screen::Playing);
     }
+}
+
+fn load_editor_catalog(assets: &std::path::Path) -> editor::EditorCatalog {
+    let p = assets.join("../data/catalogs/catalog.json");
+    std::fs::read(&p).ok().and_then(|b| editor::EditorCatalog::from_catalog_json(&b).ok()).unwrap_or_else(|| {
+        error!("editor de visual: catálogo não encontrado em {}", p.display());
+        editor::EditorCatalog::default()
+    })
 }
 
 fn load_gestures(assets: &std::path::Path) -> gestures::GestureCatalog {
