@@ -31,7 +31,9 @@ mod recovery;
 mod settings;
 mod shot;
 mod social;
+mod sound;
 mod state;
+mod synth;
 
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::prelude::*;
@@ -93,6 +95,7 @@ fn main() {
         medicine::MedicinePlugin,
         gift::GiftPlugin,
         pet::PetPlugin,
+        sound::SoundPlugin,
     ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))

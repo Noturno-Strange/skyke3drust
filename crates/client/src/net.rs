@@ -175,6 +175,7 @@ struct Social<'w, 's> {
     items: Res<'w, crate::backpack::ItemCatalog>,
     other: MessageWriter<'w, crate::state::ServerOther>,
     held: Query<'w, 's, &'static crate::backpack::Held>,
+    snd: Res<'w, crate::sound::Sound>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -226,9 +227,11 @@ fn receive(
                     session.people += 1;
                 }
                 log.push("", format!("{} entrou na sala.", p.name), true);
+                social.snd.play("join", 0.8);
             }
             NetEvent::Server(ServerMsg::PlayerLeft { id }) => {
                 if let Some(ent) = net.actors.remove(&id) {
+                    social.snd.play("leave", 0.8);
                     commands.entity(ent).despawn();
                     if !id.bot {
                         session.people = session.people.saturating_sub(1);
@@ -263,6 +266,7 @@ fn receive(
             NetEvent::Server(ServerMsg::Chat { id, name, text }) => {
                 if !id.is_some_and(|i| social.muted.0.contains(&i)) {
                     log.push(name, sky_security::clean_chat(&text, sky_shared::limits::CHAT), false);
+                    social.snd.play("chat", 0.8);
                 }
             }
             NetEvent::Server(ServerMsg::Emo { id, i }) => {

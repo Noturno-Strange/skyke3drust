@@ -36,6 +36,9 @@ pub struct Medicine {
     pub kind: String,
     #[serde(default)]
     pub info: String,
+    /// Nota MIDI da melodia do remédio.
+    #[serde(default)]
+    pub note: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -156,6 +159,8 @@ fn receive(
     me: Query<(Entity, &NetId), With<Me>>,
     actors: Query<(Entity, &NetId, &ActorName)>,
     mut health: Query<&mut Health>,
+    snd: Res<crate::sound::Sound>,
+    tf: Query<&GlobalTransform>,
 ) {
     let find = |id: &str| -> Option<Entity> {
         let id: sky_shared::ActorId = id.parse().ok()?;
@@ -221,6 +226,7 @@ fn receive(
                         let n = cat.med(i).map_or(i, |m| m.n.as_str());
                         if let (Ok((e, _)), Some(r)) = (me.single(), cat.med(i)) {
                             commands.entity(e).insert(Emote { ic: r.ic.clone(), left: 2.0 });
+                            snd.med(r.note, &r.kind, true, 0.8);
                         }
                         format!("✔ {n} pronto. Escolha quem vai receber o cuidado.")
                     } else {
@@ -239,6 +245,13 @@ fn receive(
                 let Some(r) = v.get("i").and_then(Value::as_str).and_then(|i| cat.med(i)) else { continue };
                 let Some(to) = v.get("to").and_then(Value::as_str).and_then(find) else { continue };
                 set(&mut commands, &mut health, to, Health::default());
+                let here =
+                    me.single().ok().and_then(|(e, _)| tf.get(e).ok()).map_or(Vec3::ZERO, GlobalTransform::translation);
+                let there = tf.get(to).map_or(here, GlobalTransform::translation);
+                let vol = crate::sound::dvol(Vec2::new(there.x - here.x, there.z - here.z).length());
+                if vol > 0.03 {
+                    snd.med(r.note, &r.kind, false, vol);
+                }
                 let injection = r.kind == "injection";
                 commands.entity(to).insert(Emote {
                     ic: if injection { "😖".into() } else { r.ic.clone() },

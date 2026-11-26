@@ -33,4 +33,4 @@ serde.workspace = true
 serde_json.workspace = true
 sky-security.workspace = true
 tokio.workspace = true
-bevy = { workspace = true, features = ["3d", "png", "x11", "wayland", "multi_threaded", "std", "default_font", "ui"] }
+bevy = { workspace = true, features = ["3d", "png", "x11", "wayland", "multi_threaded", "std", "default_font", "ui", "bevy_audio"] }

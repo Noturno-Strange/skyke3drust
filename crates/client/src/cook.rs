@@ -227,6 +227,7 @@ fn receive(
     cat: Res<CookCatalog>,
     mut cooked: ResMut<crate::backpack::CookedRecipes>,
     mut log: ResMut<crate::state::ChatLog>,
+    snd: Res<crate::sound::Sound>,
 ) {
     for m in msgs.read() {
         let v = &m.raw;
@@ -245,6 +246,7 @@ fn receive(
                 cook.busy = None;
                 cook.dirty = true;
                 if !v.get("ok").and_then(Value::as_bool).unwrap_or(false) {
+                    snd.play("erro", 0.9);
                     cook.msg = if v.get("renew").is_some() && v.get("reason").and_then(Value::as_str) == Some("nivel") {
                         "A estrela só vem no nível 999.".into()
                     } else {
@@ -292,6 +294,12 @@ fn receive(
                     s += &format!(" · {} {}", t("i"), t("n"));
                 }
                 cook.msg = s;
+                snd.play("cook_done", 1.0);
+                if v.get("lvUp").and_then(Value::as_bool).unwrap_or(false)
+                    || v.get("badges").and_then(Value::as_array).is_some_and(|b| !b.is_empty())
+                {
+                    snd.play("join", 0.9);
+                }
                 cook.slots.clear();
                 cook.dish = Some((id, DISH_S));
             }
@@ -302,6 +310,7 @@ fn receive(
                         farm.set_state(st);
                     }
                     cook.msg = "✔ Mantimento adicionado à despensa. Clique nele para usar.".into();
+                    snd.play("pickup", 0.8);
                 } else {
                     cook.msg = if v.get("reason").and_then(Value::as_str) == Some("moedas") {
                         "Você precisa de moedas: plante e colha na Fazenda primeiro.".into()
@@ -827,12 +836,15 @@ fn rebuild(
                     let b = button(&mut commands, &t, &f, &format!("{ic} {n}{}", if done { " ✔" } else { "" }), !done);
                     if !done {
                         let id = i.id.clone();
-                        commands.entity(b).observe(move |_: On<Activate>, mut ck: ResMut<Cook>| {
-                            if ck.working.is_none() {
-                                ck.working = Some((id.clone(), c, 0.65));
-                                ck.dirty = true;
-                            }
-                        });
+                        commands.entity(b).observe(
+                            move |_: On<Activate>, mut ck: ResMut<Cook>, snd: Res<crate::sound::Sound>| {
+                                if ck.working.is_none() {
+                                    snd.play(if c == 'l' { "wash" } else { "peel" }, 0.9);
+                                    ck.working = Some((id.clone(), c, 0.65));
+                                    ck.dirty = true;
+                                }
+                            },
+                        );
                     }
                     commands.entity(row).add_child(b);
                 }

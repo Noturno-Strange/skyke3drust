@@ -179,6 +179,7 @@ fn receive(
     mut send: MessageWriter<SendRaw>,
     mut log: ResMut<ChatLog>,
     mut fids: Query<(&crate::state::NetId, &mut crate::state::Fid)>,
+    snd: Res<crate::sound::Sound>,
 ) {
     for m in msgs.read() {
         let v = &m.raw;
@@ -238,6 +239,7 @@ fn receive(
                 }
                 let n = cut(&s(v, "name"));
                 log.push("", format!("👋 {n} quer ser seu amigo. Abra 👥 para aceitar."), true);
+                snd.play("notif", 0.9);
                 f.req.insert(id, n);
                 f.version += 1;
             }
@@ -248,6 +250,7 @@ fn receive(
                     f.add(&id, &n, &mut send);
                     f.sent.clear();
                     log.push("", format!("🤝 {} aceitou seu pedido de amizade.", cut(&n)), true);
+                    snd.play("join", 0.9);
                 }
             }
             "finvr" => {
@@ -278,6 +281,7 @@ fn receive(
                 let n = s(v, "name");
                 let name = f.fr.iter().find(|x| x.id == id).map_or_else(|| cut(&n), |x| x.n.clone());
                 log.push("", format!("📨 {name} chamou você para a sala dele(a). Abra 👥 para entrar."), true);
+                snd.play("notif", 0.9);
                 f.invite = Some((name, code));
                 f.version += 1;
             }

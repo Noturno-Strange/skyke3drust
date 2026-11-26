@@ -378,6 +378,7 @@ fn receive(
     mut f: ResMut<Farm>,
     cat: Res<FarmCatalog>,
     mut log: ResMut<crate::state::ChatLog>,
+    snd: Res<crate::sound::Sound>,
 ) {
     for m in msgs.read() {
         match m.t.as_str() {
@@ -391,7 +392,21 @@ fn receive(
                 f.dirty = true;
                 if !m.raw.get("ok").and_then(Value::as_bool).unwrap_or(false) {
                     f.msg = why(&m.raw);
+                    snd.play("erro", 0.9);
                     continue;
+                }
+                let k0 = m.raw.get("k").and_then(Value::as_str).unwrap_or_default();
+                snd.play(
+                    match k0 {
+                        "plant" => "pickup",
+                        "water" => "wash",
+                        "dig" => "peel",
+                        _ => "confirm",
+                    },
+                    0.8,
+                );
+                if m.raw.get("lvUp").and_then(Value::as_bool).unwrap_or(false) {
+                    snd.play("join", 0.9);
                 }
                 if let Some(st) = m.raw.get("state") {
                     f.set_state(st);

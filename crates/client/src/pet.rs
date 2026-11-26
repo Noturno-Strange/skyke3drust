@@ -146,7 +146,12 @@ fn boot(s: Res<Session>, mut p: ResMut<Pet>, mut send: MessageWriter<SendRaw>) {
     }
 }
 
-fn receive(mut msgs: MessageReader<ServerOther>, mut p: ResMut<Pet>, mut log: ResMut<ChatLog>) {
+fn receive(
+    mut msgs: MessageReader<ServerOther>,
+    mut p: ResMut<Pet>,
+    mut log: ResMut<ChatLog>,
+    snd: Res<crate::sound::Sound>,
+) {
     for m in msgs.read() {
         let v = &m.raw;
         match m.t.as_str() {
@@ -190,6 +195,7 @@ fn receive(mut msgs: MessageReader<ServerOther>, mut p: ResMut<Pet>, mut log: Re
                 if let Some(pet) = v.get("pet").filter(|x| x.is_object()) {
                     p.set(pet.clone());
                 }
+                snd.play(if v["ok"].as_bool().unwrap_or(false) { "confirm" } else { "erro" }, 0.8);
                 if v["ok"].as_bool().unwrap_or(false) {
                     let a = v["action"].as_str().unwrap_or_default();
                     if !v["dup"].as_bool().unwrap_or(false)

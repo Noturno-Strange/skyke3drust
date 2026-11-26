@@ -31,6 +31,11 @@ pub struct GestureInfo {
     pub n: String,
     #[serde(default)]
     pub dur: Option<f32>,
+    /// Som próprio do gesto (grito, pum); senão, dança (em laço) ou um sopro.
+    #[serde(default)]
+    pub sfx: Option<String>,
+    #[serde(default, rename = "loop")]
+    pub looped: u8,
 }
 
 impl GestureCatalog {

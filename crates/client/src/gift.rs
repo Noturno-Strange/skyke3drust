@@ -122,6 +122,7 @@ fn receive(
     mut send: MessageWriter<SendRaw>,
     farm: Res<crate::farm::FarmCatalog>,
     cook: Res<crate::cook::CookCatalog>,
+    snd: Res<crate::sound::Sound>,
 ) {
     for m in msgs.read() {
         let v = &m.raw;
@@ -164,6 +165,7 @@ fn receive(
                         "🎁 Presente enviado{}{to}!",
                         it.map_or(String::new(), |(ic, n)| format!(": {ic} {n}"))
                     );
+                    snd.play("confirm", 0.9);
                     g.sel = None;
                     if let Some((pp, _)) = &g.to {
                         send.write(SendRaw(json!({"t": "giftsee", "to": pp})));
@@ -182,6 +184,7 @@ fn receive(
                 let Some((ic, n)) = item(&farm, &cook, k, i) else { continue };
                 let from: String = v.get("n").and_then(Value::as_str).unwrap_or_default().chars().take(16).collect();
                 log.push("", format!("🎁 {from} enviou {ic} {n} para você. Veja em 🎁."), true);
+                snd.play("notif", 0.9);
                 g.unseen = u("unseen").unwrap_or(g.unseen + 1);
                 send.write(SendRaw(json!({"t": "giftget"})));
                 g.dirty = true;

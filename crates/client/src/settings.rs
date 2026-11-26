@@ -37,11 +37,16 @@ pub struct Settings {
     pub light: bool,
     /// Alto contraste.
     pub hc: bool,
+    /// Volumes de efeitos, ambiente e música (0 a 1) e se a música toca.
+    pub sfx: f32,
+    pub amb: f32,
+    pub mus: f32,
+    pub music: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { ui: 1.0, br: 1.0, light: false, hc: false }
+        Self { ui: 1.0, br: 1.0, light: false, hc: false, sfx: 0.8, amb: 0.7, mus: 0.6, music: true }
     }
 }
 
@@ -60,6 +65,10 @@ impl Settings {
         let fix = |v: f32, lo: f32, hi: f32| if v.is_finite() { v.clamp(lo, hi) } else { 1.0 };
         self.ui = fix(self.ui, 0.8, 1.5);
         self.br = fix(self.br, 0.6, 1.6);
+        let vol = |v: f32, d: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { d };
+        self.sfx = vol(self.sfx, 0.8);
+        self.amb = vol(self.amb, 0.7);
+        self.mus = vol(self.mus, 0.6);
         self
     }
 
@@ -83,6 +92,10 @@ pub struct SettingsPanel;
 enum Value {
     Ui,
     Br,
+    Sfx,
+    Amb,
+    Mus,
+    Music,
     Theme,
     Hc,
     Bots,
@@ -138,12 +151,22 @@ fn spawn_panel(mut commands: Commands, t: Res<Theme>, f: Res<UiFonts>) {
         r
     };
     let mut rows = Vec::new();
-    for (label, v, lo, hi) in [("Interface", Value::Ui, 0.8, 1.5), ("Brilho", Value::Br, 0.6, 1.6)] {
+    for (label, v, lo, hi) in [
+        ("Interface", Value::Ui, 0.8, 1.5),
+        ("Brilho", Value::Br, 0.6, 1.6),
+        ("Efeitos", Value::Sfx, 0.0, 1.0),
+        ("Ambiente", Value::Amb, 0.0, 1.0),
+        ("Música", Value::Mus, 0.0, 1.0),
+    ] {
         let dec = button(&mut commands, &t, &f, "−", false);
         let inc = button(&mut commands, &t, &f, "+", false);
         for (b, d) in [(dec, -0.05f32), (inc, 0.05)] {
+            let d = if matches!(v, Value::Sfx | Value::Amb | Value::Mus) { d * 2.0 } else { d };
             commands.entity(b).observe(move |_: On<Activate>, mut s: ResMut<Settings>| match v {
                 Value::Ui => s.ui = step(s.ui, d, lo, hi),
+                Value::Sfx => s.sfx = step(s.sfx, d, lo, hi),
+                Value::Amb => s.amb = step(s.amb, d, lo, hi),
+                Value::Mus => s.mus = step(s.mus, d, lo, hi),
                 _ => s.br = step(s.br, d, lo, hi),
             });
         }
@@ -161,6 +184,12 @@ fn spawn_panel(mut commands: Commands, t: Res<Theme>, f: Res<UiFonts>) {
     let hc_row = commands.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(8.0), ..default() }).id();
     commands.entity(hc_row).add_children(&[hc, hc_val]);
     rows.push(hc_row);
+    let mu = button(&mut commands, &t, &f, "🎵 Música", false);
+    commands.entity(mu).observe(|_: On<Activate>, mut s: ResMut<Settings>| s.music = !s.music);
+    let mu_val = commands.spawn((Text::new(""), f.font(15.0, 500), TextColor(t.fg), Value::Music)).id();
+    let mu_row = commands.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(8.0), ..default() }).id();
+    commands.entity(mu_row).add_children(&[mu, mu_val]);
+    rows.push(mu_row);
     let dec = button(&mut commands, &t, &f, "−", false);
     let inc = button(&mut commands, &t, &f, "+", false);
     for (b, d) in [(dec, -1i32), (inc, 1)] {
@@ -241,6 +270,10 @@ fn refresh_labels(s: Res<Settings>, bots: Res<Bots>, mut q: Query<(Ref<Value>, &
             Value::Br => format!("{:.0}%", s.br * 100.0),
             Value::Theme => if s.light { "Claro" } else { "Escuro" }.into(),
             Value::Hc => if s.hc { "ligado" } else { "desligado" }.into(),
+            Value::Sfx => format!("{:.0}%", s.sfx * 100.0),
+            Value::Amb => format!("{:.0}%", s.amb * 100.0),
+            Value::Mus => format!("{:.0}%", s.mus * 100.0),
+            Value::Music => if s.music { "ligada" } else { "desligada" }.into(),
             Value::Bots => bots.0.to_string(),
         };
     }
@@ -255,7 +288,8 @@ mod tests {
         assert_eq!(step(1.0, 0.05, 0.8, 1.5), 1.05);
         assert_eq!(step(1.5, 0.05, 0.8, 1.5), 1.5);
         assert_eq!(step(0.8, -0.05, 0.8, 1.5), 0.8);
-        let s = Settings { ui: 9.0, br: f32::NAN, light: true, hc: false }.clamped();
+        let s = Settings { ui: 9.0, br: f32::NAN, light: true, sfx: 7.0, ..Settings::default() }.clamped();
+        assert_eq!(s.sfx, 1.0);
         assert_eq!((s.ui, s.br), (1.5, 1.0));
         assert_eq!(s.theme_kind(), ThemeKind::Light);
     }
