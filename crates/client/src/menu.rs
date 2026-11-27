@@ -890,8 +890,12 @@ fn menu_name_tag(
 }
 
 /// O código da sala aparece em maiúsculas (`text-transform: uppercase` no original).
-fn upper_code(mut q: Query<&mut EditableText, (With<CodeField>, Changed<EditableText>)>) {
+fn upper_code(mut q: Query<&mut EditableText, With<CodeField>>) {
     for mut e in &mut q {
+        // com teclas ainda na fila, trocar o texto agora descartaria as letras digitadas neste quadro
+        if !e.pending_edits.is_empty() {
+            continue;
+        }
         let v = input_value(&e);
         let up = v.to_uppercase();
         if up != v {
