@@ -26,12 +26,25 @@ cargo run --release -p sky-client --bin skyke3d -- --world cerron --explore   # 
 | botão direito | arrastar gira a câmera; clique alterna câmera padrão / de frente |
 | Enter / Esc | abrir e enviar o chat / voltar ao jogo |
 
-Entrar no servidor do jogo (o mesmo do navegador):
+### Servidor
+
+O servidor também é Rust (`skyke3d-server`), no estilo de um servidor de Minecraft: `server.properties`, pasta
+`data/` e console com comandos. Detalhes em [docs/servidor.md](docs/servidor.md).
+
+```bash
+cargo run --release -p sky-server -- --dir /caminho/da/pasta   # a pasta precisa de web/ (o cliente do navegador)
+```
+
+Entrar no servidor do jogo (o Rust ou o Node.js original, com o mesmo protocolo):
 
 ```bash
 cargo run --release -p sky-client --bin skyke3d -- --server http://localhost:3000 --name Ana --world amazora --bots 3
 cargo run --release -p sky-client --bin skyke3d -- --server http://localhost:3000 --name Bia --join ABCDE-FGHJK
 ```
+
+Como no navegador, só se entra numa sala depois de confirmar ter 18 anos ou mais e aceitar os Termos de Uso e a Política
+de Privacidade (seção **4 · Termos** da tela inicial; o documento vem do próprio servidor, em `/termos`). Enquanto isso
+não foi feito, `--server` e `--name` só preenchem a tela inicial; depois do aceite, entram direto na sala.
 
 Mundos: `amazora`, `cerron`, `atlanthia`, `caatara`, `panthara`, `pamphora`.
 
@@ -51,9 +64,11 @@ crates/
   rendering/    material toon WGSL que reproduz o MeshToonMaterial do original, mipmaps
   world/        carrega os mundos exportados (GLB + world.json), troca materiais, sprites
   client/       o jogo (binário `skyke3d`)
+  server/       o servidor (binário `skyke3d-server`): salas, identidade, gameplay, voz, mídia e moderação
 tools/
   asset-exporter/     exporta mundos e avatar do cliente web original para GLB + metadados + capturas
   visual-comparator/  compara capturas nativas com as de referência (PSNR, mapa de diferenças)
+  server-compat/      roda a suíte de testes do servidor Node.js original contra o servidor Rust
 assets/  worlds/, avatars/, shaders/, fonts/
 data/    catalogs/catalog.json (catálogo do original: paletas, itens, receitas, plantas, remédios)
 docs/    auditoria do original, protocolo, estado da migração, Rhai, ferramentas

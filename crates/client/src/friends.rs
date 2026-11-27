@@ -213,7 +213,7 @@ fn receive(
                     continue;
                 }
                 f.hm.retain(|_, x| *x != id);
-                let on = v.get("on").and_then(Value::as_u64).unwrap_or(0) == 1;
+                let on = v.get("on").and_then(sky_protocol::json::js_u64).unwrap_or(0) == 1;
                 if on {
                     for h in v.get("hs").and_then(Value::as_array).into_iter().flatten().take(8) {
                         if let Some(h) = h.as_str().filter(|h| ok_id(h)) {

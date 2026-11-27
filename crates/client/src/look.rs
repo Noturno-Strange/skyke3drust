@@ -63,7 +63,7 @@ impl AvatarKit {
             .map_err(|e| e.to_string())?;
         let fy = d.fy.unwrap_or(0.247);
         let raw: BTreeMap<String, u32> =
-            d.cfg.into_iter().filter_map(|(k, v)| v.as_u64().map(|n| (k, n as u32))).collect();
+            d.cfg.into_iter().filter_map(|(k, v)| sky_protocol::json::js_u64(&v).map(|n| (k, n as u32))).collect();
         let reference = palettes.clean(&raw).ok_or("visual de referência inválido")?;
         Ok(Self { palettes, reference, fy, hair_dir: assets.join("avatars/hair"), shapes: Default::default() })
     }

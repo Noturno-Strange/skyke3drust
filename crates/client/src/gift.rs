@@ -45,7 +45,7 @@ fn gifts_of(v: &Value) -> Vec<Gift> {
             a.iter()
                 .take(300)
                 .map(|g| Gift {
-                    id: g.get("id").and_then(Value::as_u64).unwrap_or(0),
+                    id: g.get("id").and_then(sky_protocol::json::js_u64).unwrap_or(0),
                     k: g.get("k").and_then(Value::as_str).unwrap_or_default().to_owned(),
                     i: g.get("i").and_then(Value::as_str).unwrap_or_default().to_owned(),
                     n: g.get("n").and_then(Value::as_str).unwrap_or_default().chars().take(16).collect(),
@@ -115,6 +115,7 @@ fn item(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn receive(
     mut msgs: MessageReader<ServerOther>,
     mut g: ResMut<Gifts>,
@@ -123,10 +124,11 @@ fn receive(
     farm: Res<crate::farm::FarmCatalog>,
     cook: Res<crate::cook::CookCatalog>,
     snd: Res<crate::sound::Sound>,
+    mut show: MessageWriter<crate::show::LifeShow>,
 ) {
     for m in msgs.read() {
         let v = &m.raw;
-        let u = |k| v.get(k).and_then(Value::as_u64);
+        let u = |k| v.get(k).and_then(sky_protocol::json::js_u64);
         match m.t.as_str() {
             "gifts" => {
                 g.mine = gifts_of(v);
@@ -142,7 +144,8 @@ fn receive(
             "giftbox" => {
                 let to = v.get("to").and_then(Value::as_str).unwrap_or_default();
                 if g.to.as_ref().is_some_and(|(pp, _)| pp == to) {
-                    let none = v.get("none").is_some_and(|x| x.as_bool().unwrap_or(x.as_u64() == Some(1)));
+                    let none =
+                        v.get("none").is_some_and(|x| x.as_bool().unwrap_or(sky_protocol::json::js_u64(x) == Some(1)));
                     g.other = Some(if none { None } else { Some(gifts_of(v)) });
                     g.dirty = true;
                 }
@@ -166,6 +169,7 @@ fn receive(
                         it.map_or(String::new(), |(ic, n)| format!(": {ic} {n}"))
                     );
                     snd.play("confirm", 0.9);
+                    show.write(crate::show::LifeShow::new("🎁", crate::show::At::Me, 2.4, 2.5, 1.0));
                     g.sel = None;
                     if let Some((pp, _)) = &g.to {
                         send.write(SendRaw(json!({"t": "giftsee", "to": pp})));

@@ -157,6 +157,32 @@ fn endpoints(server: &str) -> Result<(Url, Url, String), NetError> {
     Ok((ticket, ws, origin))
 }
 
+/// Baixa uma página de texto do servidor (`/termos`, por exemplo) numa thread qualquer, sem bloquear o jogo.
+pub fn fetch_text_blocking(server: &str, path: &str) -> Result<String, NetError> {
+    let mut url = Url::parse(server).map_err(|e| NetError::BadUrl(e.to_string()))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(NetError::BadUrl(format!("esquema {} (use http ou https)", url.scheme())));
+    }
+    url.set_path(path);
+    url.set_query(None);
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| NetError::Http(e.to_string()))?;
+    rt.block_on(async move {
+        let client = reqwest::Client::builder()
+            .timeout(STEP_TIMEOUT)
+            .user_agent(concat!("skyke3d-nativo/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .map_err(|e| NetError::Http(e.to_string()))?;
+        let r = client.get(url).send().await.map_err(|e| NetError::Http(e.to_string()))?;
+        if !r.status().is_success() {
+            return Err(NetError::Http(r.status().to_string()));
+        }
+        r.text().await.map_err(|_| NetError::BadResponse)
+    })
+}
+
 async fn get_ticket(url: &Url) -> Result<Option<String>, NetError> {
     let client = reqwest::Client::builder()
         .timeout(STEP_TIMEOUT)

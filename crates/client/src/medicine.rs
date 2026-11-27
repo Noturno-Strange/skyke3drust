@@ -4,7 +4,8 @@
 
 use crate::friends::Friends;
 use crate::player::Me;
-use crate::state::{ActorName, ChatLog, Emote, Fid, NetId, Screen, SendRaw, ServerOther, Session};
+use crate::show::{At, LifeShow, MedAura, MedPose};
+use crate::state::{ActorName, ChatLog, Fid, NetId, Screen, SendRaw, ServerOther, Session};
 use bevy::prelude::*;
 use bevy::text::EditableText;
 use serde::Deserialize;
@@ -39,6 +40,17 @@ pub struct Medicine {
     /// Nota MIDI da melodia do remédio.
     #[serde(default)]
     pub note: f32,
+    /// Cor dos pontos e do frasco e cor do detalhe (hex).
+    #[serde(default)]
+    pub color: u32,
+    #[serde(default)]
+    pub accent: u32,
+}
+
+impl Medicine {
+    fn aura(&self, on: At, craft: bool) -> MedAura {
+        MedAura { on, kind: self.kind.clone(), color: self.color, accent: self.accent, craft }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -161,6 +173,8 @@ fn receive(
     mut health: Query<&mut Health>,
     snd: Res<crate::sound::Sound>,
     tf: Query<&GlobalTransform>,
+    mut show: MessageWriter<LifeShow>,
+    mut auras: MessageWriter<MedAura>,
 ) {
     let find = |id: &str| -> Option<Entity> {
         let id: sky_shared::ActorId = id.parse().ok()?;
@@ -184,12 +198,14 @@ fn receive(
             };
         match m.t.as_str() {
             "health" => {
-                med.lv = v.get("lv").and_then(Value::as_u64).unwrap_or(1);
-                med.helped = v.get("helped").and_then(Value::as_u64).unwrap_or(0);
+                med.lv = v.get("lv").and_then(sky_protocol::json::js_u64).unwrap_or(1);
+                med.helped = v.get("helped").and_then(sky_protocol::json::js_u64).unwrap_or(0);
                 med.meds = v
                     .get("meds")
                     .and_then(Value::as_object)
-                    .map(|o| o.iter().filter_map(|(k, n)| n.as_u64().map(|n| (k.clone(), n))).collect())
+                    .map(|o| {
+                        o.iter().filter_map(|(k, n)| sky_protocol::json::js_u64(n).map(|n| (k.clone(), n))).collect()
+                    })
                     .unwrap_or_default();
                 med.me = Health::from_value(v);
                 if let Ok((e, _)) = me.single() {
@@ -214,10 +230,14 @@ fn receive(
                     med.meds = st
                         .get("meds")
                         .and_then(Value::as_object)
-                        .map(|o| o.iter().filter_map(|(k, n)| n.as_u64().map(|n| (k.clone(), n))).collect())
+                        .map(|o| {
+                            o.iter()
+                                .filter_map(|(k, n)| sky_protocol::json::js_u64(n).map(|n| (k.clone(), n)))
+                                .collect()
+                        })
                         .unwrap_or_default();
-                    med.lv = st.get("lv").and_then(Value::as_u64).unwrap_or(med.lv);
-                    med.helped = st.get("helped").and_then(Value::as_u64).unwrap_or(med.helped);
+                    med.lv = st.get("lv").and_then(sky_protocol::json::js_u64).unwrap_or(med.lv);
+                    med.helped = st.get("helped").and_then(sky_protocol::json::js_u64).unwrap_or(med.helped);
                 }
                 let ok = v.get("ok").and_then(Value::as_bool).unwrap_or(false);
                 let i = v.get("i").and_then(Value::as_str).unwrap_or_default();
@@ -225,7 +245,9 @@ fn receive(
                     if v.get("k").and_then(Value::as_str) == Some("craft") {
                         let n = cat.med(i).map_or(i, |m| m.n.as_str());
                         if let (Ok((e, _)), Some(r)) = (me.single(), cat.med(i)) {
-                            commands.entity(e).insert(Emote { ic: r.ic.clone(), left: 2.0 });
+                            commands.entity(e).insert(MedPose::new("prepare", &r.kind));
+                            auras.write(r.aura(At::Me, true));
+                            show.write(LifeShow::new(r.ic.clone(), At::Me, 2.5, 2.0, 0.8));
                             snd.med(r.note, &r.kind, true, 0.8);
                         }
                         format!("✔ {n} pronto. Escolha quem vai receber o cuidado.")
@@ -253,11 +275,17 @@ fn receive(
                     snd.med(r.note, &r.kind, false, vol);
                 }
                 let injection = r.kind == "injection";
-                commands.entity(to).insert(Emote {
-                    ic: if injection { "😖".into() } else { r.ic.clone() },
-                    left: if injection { 1.2 } else { 2.4 },
+                commands.entity(to).insert(MedPose::new(if injection { "ouch" } else { &r.kind }, &r.kind));
+                auras.write(r.aura(At::Actor(to), false));
+                show.write(if injection {
+                    LifeShow::new("Ai!", At::Actor(to), 2.6, 1.2, 0.65)
+                } else {
+                    LifeShow::new(r.ic.clone(), At::Actor(to), 2.6, 2.4, 1.0)
                 });
                 let healer = v.get("id").and_then(Value::as_str).and_then(find);
+                if let Some(h) = healer.filter(|h| *h != to) {
+                    commands.entity(h).insert(MedPose::new("care", &r.kind));
+                }
                 if me.single().is_ok_and(|(e, _)| e == to)
                     && let Some(h) = healer.filter(|h| *h != to)
                 {

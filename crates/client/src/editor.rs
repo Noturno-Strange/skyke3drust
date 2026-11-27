@@ -12,7 +12,7 @@ use crate::state::{Screen, SendCfg};
 use bevy::prelude::*;
 use bevy::ui_widgets::Button;
 use sky_avatars::{Cfg, Palette};
-use sky_ui::{Activate, ButtonLabel, Theme, UiFonts, button, panel};
+use sky_ui::{Activate, Theme, UiFonts, button, panel};
 use std::collections::BTreeMap;
 
 #[derive(Debug)]
@@ -23,7 +23,11 @@ impl Plugin for EditorPlugin {
         app.init_resource::<EditorState>()
             .add_systems(OnEnter(Screen::Playing), spawn_editor)
             .add_systems(OnExit(Screen::Playing), despawn::<EditorPanel>)
-            .add_systems(Update, (rebuild_rows, apply_my_look).run_if(in_state(Screen::Playing)));
+            .add_systems(
+                Update,
+                (rebuild_rows, apply_my_look)
+                    .run_if(|s: Res<State<Screen>>| matches!(s.get(), Screen::Playing | Screen::Menu)),
+            );
     }
 }
 
@@ -48,7 +52,7 @@ impl MyLook {
         Self { cfg, send_at: None }
     }
 
-    fn set(&mut self, k: &str, v: u32) {
+    pub fn set(&mut self, k: &str, v: u32) {
         self.cfg.0.insert(k.to_owned(), v);
     }
 }
@@ -64,8 +68,9 @@ struct EditorState {
 /// Painel do editor (aberto e fechado pelo botão 👕 da barra).
 #[derive(Component, Debug)]
 pub struct EditorPanel;
+/// Lista de linhas do editor (no painel 👕 do jogo ou na seção "3 · Seu avatar" da tela inicial), com o tema dela.
 #[derive(Component, Debug)]
-struct EditorRows;
+struct EditorRows(Theme);
 #[derive(Component, Debug)]
 struct EditorTab(usize);
 
@@ -191,9 +196,23 @@ fn spawn_editor(
         ))
         .id();
     let title = commands.spawn((Text::new("👕 Visual"), f.font(15.0, 700), TextColor(t.strong))).id();
-    let tabs = commands.spawn(Node { column_gap: Val::Px(6.0), flex_wrap: FlexWrap::Wrap, ..default() }).id();
+    let (tabs, rows) = editor_body(&mut commands, &t, &f);
+    commands.entity(root).add_children(&[title, tabs, rows]);
+    st.dirty = true;
+}
+
+/// Abas e linhas do editor (`mkEditor`), para pôr num painel qualquer. As linhas são feitas por `rebuild_rows`.
+pub fn editor_body(commands: &mut Commands, t: &Theme, f: &UiFonts) -> (Entity, Entity) {
+    let tabs = commands
+        .spawn(Node {
+            display: Display::Grid,
+            grid_template_columns: RepeatedGridTrack::flex(4, 1.0),
+            column_gap: Val::Px(6.0),
+            ..default()
+        })
+        .id();
     for (i, name) in TABS.iter().enumerate() {
-        let b = button(&mut commands, &t, &f, name, i == 0);
+        let b = button(commands, t, f, name, false);
         commands.entity(b).insert(EditorTab(i)).observe(move |_: On<Activate>, mut st: ResMut<EditorState>| {
             st.tab = i;
             st.open = None;
@@ -202,10 +221,36 @@ fn spawn_editor(
         commands.entity(tabs).add_child(b);
     }
     let rows = commands
-        .spawn((EditorRows, Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(6.0), ..default() }))
+        .spawn((EditorRows(*t), Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(6.0), ..default() }))
         .id();
-    commands.entity(root).add_children(&[title, tabs, rows]);
-    st.dirty = true;
+    (tabs, rows)
+}
+
+/// Fundo suave das linhas (`--soft`).
+fn soft(t: &Theme) -> Color {
+    match t.kind {
+        sky_ui::ThemeKind::Light => Color::srgba(0.0, 0.0, 0.0, 0.043),
+        sky_ui::ThemeKind::HighContrast => Color::NONE,
+        sky_ui::ThemeKind::Dark => Color::srgba(1.0, 1.0, 1.0, 0.05),
+    }
+}
+
+/// Visual aleatório (`randomLook`): sem chapéu, nome e brilho como estavam.
+pub fn random_look(my: &mut MyLook, kit: &AvatarKit) {
+    let mut seed =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1;
+    let mut ri = |n: u32| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed % u64::from(n.max(1))) as u32
+    };
+    for k in ["skin", "eye", "shirt", "hair", "hs", "hc", "bt", "pc", "sc", "shoes", "fc"] {
+        let n = kit.palettes.cr.get(k).copied().unwrap_or(1);
+        let v = ri(n);
+        my.set(k, v);
+    }
+    my.set("hat", 0);
 }
 
 /// Abre ou fecha o painel (botão 👕).
@@ -215,155 +260,241 @@ pub fn toggle(q: &mut Query<&mut Node, With<EditorPanel>>) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn rebuild_rows(
     mut commands: Commands,
     mut st: ResMut<EditorState>,
     my: Option<Res<MyLook>>,
     kit: Option<Res<AvatarKit>>,
     cat: Res<EditorCatalog>,
-    t: Res<Theme>,
     f: Res<UiFonts>,
-    rows: Query<(Entity, Option<&Children>), With<EditorRows>>,
-    mut tabs: Query<(&EditorTab, &mut BackgroundColor, &Children)>,
-    mut labels: Query<&mut TextColor, With<ButtonLabel>>,
+    rows: Query<(Entity, &EditorRows, Option<&Children>)>,
+    added: Query<(), Added<EditorRows>>,
+    mut tabs: Query<(&EditorTab, &mut BackgroundColor, &mut BorderColor, &mut Node)>,
 ) {
     let (Some(my), Some(kit)) = (my, kit) else { return };
-    if !st.dirty && !my.is_changed() {
+    if !st.dirty && !my.is_changed() && added.is_empty() {
         return;
     }
     st.dirty = false;
-    let Ok((root, kids)) = rows.single() else { return };
-    for (tab, mut bg, ch) in &mut tabs {
-        let sel = tab.0 == st.tab;
-        bg.0 = if sel { t.accent } else { t.panel };
-        for c in ch {
-            if let Ok(mut tc) = labels.get_mut(*c) {
-                tc.0 = if sel { t.on_accent } else { t.fg };
+    for (root, rows, kids) in &rows {
+        let t = &rows.0;
+        if let Some(kids) = kids {
+            for c in kids {
+                commands.entity(*c).despawn();
             }
         }
-    }
-    if let Some(kids) = kids {
-        for c in kids {
-            commands.entity(*c).despawn();
-        }
-    }
-    let cfg = &my.cfg;
-    let mut out = Vec::new();
-    for (tab, label, fields) in ROWS {
-        if tab != st.tab {
-            continue;
-        }
-        let row = commands
-            .spawn(Node {
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(6.0),
-                flex_wrap: FlexWrap::Wrap,
-                ..default()
-            })
-            .id();
-        let l = commands
-            .spawn((Text::new(label), f.font(15.0, 600), TextColor(t.fg), Node { width: Val::Px(80.0), ..default() }))
-            .id();
-        commands.entity(row).add_child(l);
-        let mut grids = Vec::new();
-        for field in fields.iter().copied() {
-            let k = field.key();
-            let n = kit.palettes.cr.get(k).copied().unwrap_or(1).max(1);
-            let x = cfg.get(k).min(n - 1);
-            match field {
-                Field::Step { n: name, list, .. } => {
-                    let prev = button(&mut commands, &t, &f, "◀", false);
-                    let next = button(&mut commands, &t, &f, "▶", false);
-                    for (b, d) in [(prev, n - 1), (next, 1)] {
-                        commands.entity(b).observe(move |_: On<Activate>, mut my: ResMut<MyLook>| {
-                            let v = (my.cfg.get(k) + d) % n;
-                            my.set(k, v);
-                        });
+        let cfg = &my.cfg;
+        let mut out = Vec::new();
+        for (tab, label, fields) in ROWS {
+            if tab != st.tab {
+                continue;
+            }
+            let row = commands
+                .spawn((
+                    Node {
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::SpaceBetween,
+                        column_gap: Val::Px(8.0),
+                        min_height: Val::Px(46.0),
+                        padding: UiRect::axes(Val::Px(10.0), Val::Px(5.0)),
+                        border_radius: BorderRadius::all(Val::Px(12.0)),
+                        ..default()
+                    },
+                    BackgroundColor(soft(t)),
+                ))
+                .id();
+            let l = commands.spawn((Text::new(label), f.font(16.0, 600), TextColor(t.fg))).id();
+            let ctl =
+                commands.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(8.0), ..default() }).id();
+            commands.entity(row).add_children(&[l, ctl]);
+            let mut grids = Vec::new();
+            for field in fields.iter().copied() {
+                let k = field.key();
+                let n = kit.palettes.cr.get(k).copied().unwrap_or(1).max(1);
+                let x = cfg.get(k).min(n - 1);
+                match field {
+                    Field::Step { n: name, list, .. } => {
+                        let prev = arrow(&mut commands, t, &f, "◀");
+                        let next = arrow(&mut commands, t, &f, "▶");
+                        for (b, d) in [(prev, n - 1), (next, 1)] {
+                            commands.entity(b).observe(move |_: On<Activate>, mut my: ResMut<MyLook>| {
+                                let v = (my.cfg.get(k) + d) % n;
+                                my.set(k, v);
+                            });
+                        }
+                        let val =
+                            cat.list(list).get(x as usize).cloned().unwrap_or_else(|| format!("{name} {}", x + 1));
+                        let v = commands
+                            .spawn((
+                                Node { width: Val::Px(112.0), justify_content: JustifyContent::Center, ..default() },
+                                children![(
+                                    Text::new(val),
+                                    f.font(15.0, 500),
+                                    TextColor(t.fg),
+                                    TextLayout::justify(Justify::Center)
+                                )],
+                            ))
+                            .id();
+                        commands.entity(ctl).add_children(&[prev, v, next]);
                     }
-                    let val = cat.list(list).get(x as usize).cloned().unwrap_or_else(|| format!("{name} {}", x + 1));
-                    let v = commands
-                        .spawn((
-                            Text::new(val),
-                            f.font(15.0, 500),
-                            TextColor(t.fg),
-                            Node { min_width: Val::Px(120.0), justify_content: JustifyContent::Center, ..default() },
-                        ))
-                        .id();
-                    commands.entity(row).add_children(&[prev, v, next]);
+                    Field::Color { pal, gloss, .. } => {
+                        let glossy = gloss.is_some_and(|g| cfg.flag(g));
+                        let hexes: Vec<String> = match pal {
+                            Pal::Avatar(p) => (0..n).map(|i| kit.palettes.color(p, i, glossy).to_owned()).collect(),
+                            Pal::Name => cat.list("NCOL").to_vec(),
+                        };
+                        let cur = hexes.get(x as usize).map_or(Color::BLACK, |h| hex_color(h));
+                        let open = st.open == Some(k);
+                        let sw = commands
+                            .spawn((
+                                Button,
+                                bevy::input_focus::tab_navigation::TabIndex(0),
+                                Node {
+                                    width: Val::Px(46.0),
+                                    height: Val::Px(36.0),
+                                    border: UiRect::all(Val::Px(1.0)),
+                                    border_radius: BorderRadius::all(Val::Px(12.0)),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(Color::NONE),
+                                BorderColor::all(if open { t.accent } else { t.border }),
+                                children![(
+                                    Node {
+                                        width: Val::Px(24.0),
+                                        height: Val::Px(24.0),
+                                        border: UiRect::all(Val::Px(2.0)),
+                                        border_radius: BorderRadius::all(Val::Percent(50.0)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(cur),
+                                    BorderColor::all(Color::WHITE.with_alpha(0.85)),
+                                    Pickable::IGNORE,
+                                )],
+                            ))
+                            .observe(move |_: On<Activate>, mut st: ResMut<EditorState>| {
+                                st.open = if st.open == Some(k) { None } else { Some(k) };
+                                st.dirty = true;
+                            })
+                            .id();
+                        commands.entity(ctl).add_child(sw);
+                        if open {
+                            let grid = commands
+                                .spawn((
+                                    Node {
+                                        display: Display::Grid,
+                                        grid_template_columns: RepeatedGridTrack::px(10, 30.0),
+                                        column_gap: Val::Px(6.0),
+                                        row_gap: Val::Px(6.0),
+                                        padding: UiRect::all(Val::Px(10.0)),
+                                        justify_content: JustifyContent::Center,
+                                        border_radius: BorderRadius::all(Val::Px(12.0)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(soft(t)),
+                                ))
+                                .id();
+                            for (i, h) in hexes.iter().enumerate() {
+                                let i = i as u32;
+                                let b = commands
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            width: Val::Px(30.0),
+                                            height: Val::Px(30.0),
+                                            border: UiRect::all(Val::Px(if i == x { 3.0 } else { 1.0 })),
+                                            border_radius: BorderRadius::all(Val::Percent(50.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(hex_color(h)),
+                                        BorderColor::all(if i == x { t.fg } else { t.border }),
+                                    ))
+                                    .observe(move |_: On<Activate>, mut my: ResMut<MyLook>| my.set(k, i))
+                                    .id();
+                                commands.entity(grid).add_child(b);
+                            }
+                            grids.push(grid);
+                        }
+                    }
                 }
-                Field::Color { pal, gloss, .. } => {
-                    let glossy = gloss.is_some_and(|g| cfg.flag(g));
-                    let hexes: Vec<String> = match pal {
-                        Pal::Avatar(p) => (0..n).map(|i| kit.palettes.color(p, i, glossy).to_owned()).collect(),
-                        Pal::Name => cat.list("NCOL").to_vec(),
-                    };
-                    let cur = hexes.get(x as usize).map_or(Color::BLACK, |h| hex_color(h));
-                    let sw = button(&mut commands, &t, &f, if glossy { "✨" } else { "  " }, false);
-                    commands.entity(sw).insert((
-                        BackgroundColor(cur),
+            }
+            out.push(row);
+            out.extend(grids);
+        }
+        // cores brilhantes: uma caixa só para o avatar todo
+        let on = GLOSS_KEYS.iter().any(|k| cfg.flag(k));
+        let g = commands
+            .spawn((
+                Button,
+                bevy::input_focus::tab_navigation::TabIndex(0),
+                Node {
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(10.0),
+                    min_height: Val::Px(46.0),
+                    padding: UiRect::axes(Val::Px(10.0), Val::Px(5.0)),
+                    border_radius: BorderRadius::all(Val::Px(12.0)),
+                    ..default()
+                },
+                BackgroundColor(soft(t)),
+                children![
+                    (
                         Node {
-                            width: Val::Px(44.0),
-                            height: Val::Px(30.0),
+                            width: Val::Px(20.0),
+                            height: Val::Px(20.0),
                             border: UiRect::all(Val::Px(2.0)),
-                            border_radius: BorderRadius::all(Val::Px(8.0)),
+                            border_radius: BorderRadius::all(Val::Px(5.0)),
                             justify_content: JustifyContent::Center,
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                    ));
-                    commands.entity(sw).observe(move |_: On<Activate>, mut st: ResMut<EditorState>| {
-                        st.open = if st.open == Some(k) { None } else { Some(k) };
-                        st.dirty = true;
-                    });
-                    commands.entity(row).add_child(sw);
-                    if st.open == Some(k) {
-                        let grid = commands
-                            .spawn(Node {
-                                flex_wrap: FlexWrap::Wrap,
-                                column_gap: Val::Px(4.0),
-                                row_gap: Val::Px(4.0),
-                                padding: UiRect::left(Val::Px(86.0)),
-                                ..default()
-                            })
-                            .id();
-                        for (i, h) in hexes.iter().enumerate() {
-                            let i = i as u32;
-                            let b = commands
-                                .spawn((
-                                    Button,
-                                    Node {
-                                        width: Val::Px(26.0),
-                                        height: Val::Px(26.0),
-                                        border: UiRect::all(Val::Px(if i == x { 3.0 } else { 1.0 })),
-                                        border_radius: BorderRadius::all(Val::Px(6.0)),
-                                        ..default()
-                                    },
-                                    BackgroundColor(hex_color(h)),
-                                    BorderColor::all(if i == x { t.strong } else { t.border }),
-                                ))
-                                .observe(move |_: On<Activate>, mut my: ResMut<MyLook>| my.set(k, i))
-                                .id();
-                            commands.entity(grid).add_child(b);
-                        }
-                        grids.push(grid);
-                    }
+                        BackgroundColor(if on { t.accent } else { Color::NONE }),
+                        BorderColor::all(if on { t.accent } else { t.border }),
+                        Pickable::IGNORE,
+                        children![(
+                            Text::new(if on { "✔" } else { "" }),
+                            f.font(13.0, 800),
+                            TextColor(t.on_accent),
+                            Pickable::IGNORE
+                        )],
+                    ),
+                    (Text::new("✨ Cores brilhantes"), f.font(16.0, 600), TextColor(t.fg), Pickable::IGNORE),
+                ],
+            ))
+            .observe(move |_: On<Activate>, mut my: ResMut<MyLook>| {
+                for k in GLOSS_KEYS {
+                    my.set(k, u32::from(!on));
                 }
-            }
+            })
+            .id();
+        out.push(g);
+        commands.entity(root).add_children(&out);
+        // abas: a aberta ganha a borda de destaque
+        for (tab, mut bg, mut bc, mut node) in &mut tabs {
+            let sel = tab.0 == st.tab;
+            bg.0 = if sel { soft(t) } else { Color::NONE };
+            *bc = BorderColor::all(if sel { t.accent } else { t.border });
+            node.border = UiRect::all(Val::Px(if sel { 2.0 } else { 1.0 }));
+            node.padding = UiRect::axes(Val::Px(4.0), Val::Px(if sel { 9.0 } else { 10.0 }));
+            node.justify_content = JustifyContent::Center;
         }
-        out.push(row);
-        out.extend(grids);
     }
-    // cores brilhantes: uma caixa só para o avatar todo
-    let on = GLOSS_KEYS.iter().any(|k| cfg.flag(k));
-    let g = button(&mut commands, &t, &f, if on { "✨ Cores brilhantes: sim" } else { "✨ Cores brilhantes: não" }, on);
-    commands.entity(g).observe(move |_: On<Activate>, mut my: ResMut<MyLook>| {
-        for k in GLOSS_KEYS {
-            my.set(k, u32::from(!on));
-        }
+}
+
+/// Botão quadrado ◀ / ▶ (`.estp button`).
+fn arrow(commands: &mut Commands, t: &Theme, f: &UiFonts, s: &str) -> Entity {
+    let b = button(commands, t, f, s, false);
+    commands.entity(b).insert(Node {
+        width: Val::Px(36.0),
+        height: Val::Px(36.0),
+        border: UiRect::all(Val::Px(1.0)),
+        border_radius: BorderRadius::all(Val::Px(10.0)),
+        justify_content: JustifyContent::Center,
+        align_items: AlignItems::Center,
+        ..default()
     });
-    out.push(g);
-    commands.entity(root).add_children(&out);
+    b
 }
 
 /// Visual mudou: aplica no avatar local, grava e agenda o envio; 250 ms depois da última mudança, envia.

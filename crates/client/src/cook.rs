@@ -5,6 +5,7 @@
 
 use crate::farm::{Farm, FarmCatalog, coin};
 use crate::player::Me;
+use crate::show::{At, LifeShow};
 use crate::state::{Screen, SendRaw, ServerOther, Session};
 use bevy::prelude::*;
 use bevy::text::EditableText;
@@ -30,6 +31,12 @@ impl Plugin for CookPlugin {
 
 /// Fogueira (centro da área de caminhada, `WALK`) e o alcance para cozinhar.
 const FIRE: Vec2 = Vec2::new(0.0, 1.2);
+
+/// Prato pronto sobre a fogueira, acima das cabeças de quem está sentado em volta (o mesmo para quem cozinhou e para
+/// quem está perto).
+fn dish(ic: &str) -> LifeShow {
+    LifeShow::new(ic, At::Xz(FIRE), 2.6, DISH_S, 1.25)
+}
 const REACH: f32 = 5.5;
 /// O prato pronto fica sobre a fogueira por 4 s e depois vai para a mão.
 const DISH_S: f32 = 4.0;
@@ -142,7 +149,7 @@ impl Cook {
         })
     }
     fn set_state(&mut self, v: &Value) {
-        let u = |k| v.get(k).and_then(Value::as_u64).unwrap_or(0);
+        let u = |k| v.get(k).and_then(sky_protocol::json::js_u64).unwrap_or(0);
         self.lv = u("lv").max(1) as u32;
         self.xp = u("xp");
         self.lo = u("lo");
@@ -152,7 +159,7 @@ impl Cook {
         self.done = v
             .get("done")
             .and_then(Value::as_object)
-            .map(|o| o.iter().filter_map(|(k, n)| n.as_u64().map(|n| (k.clone(), n))).collect())
+            .map(|o| o.iter().filter_map(|(k, n)| sky_protocol::json::js_u64(n).map(|n| (k.clone(), n))).collect())
             .unwrap_or_default();
         self.badges = v
             .get("badges")
@@ -206,7 +213,7 @@ const WHY: [(&str, &str); 9] = [
 fn why(m: &Value) -> String {
     let r = m.get("reason").and_then(Value::as_str).unwrap_or_default();
     if r == "descanso" {
-        let w = m.get("wait").and_then(Value::as_u64).unwrap_or(60).div_ceil(60);
+        let w = m.get("wait").and_then(sky_protocol::json::js_u64).unwrap_or(60).div_ceil(60);
         return format!("⏸ Descanso de {w} min: muitas ações seguidas, no mesmo ritmo. Seu progresso está guardado.");
     }
     WHY.iter().find(|(k, _)| *k == r).map_or("Não foi possível cozinhar agora.", |(_, t)| t).to_owned()
@@ -228,6 +235,8 @@ fn receive(
     mut cooked: ResMut<crate::backpack::CookedRecipes>,
     mut log: ResMut<crate::state::ChatLog>,
     snd: Res<crate::sound::Sound>,
+    mut show: MessageWriter<LifeShow>,
+    who: crate::show::Actors,
 ) {
     for m in msgs.read() {
         let v = &m.raw;
@@ -260,19 +269,22 @@ fn receive(
                 if v.get("renew").is_some() {
                     cook.msg = format!(
                         "★ Estrela vermelha {}! Você voltou ao nível 1 e ganha +10% de experiência e +5% de moedas a cada estrela.",
-                        v.get("rank").and_then(Value::as_u64).unwrap_or(0)
+                        v.get("rank").and_then(sky_protocol::json::js_u64).unwrap_or(0)
                     );
+                    snd.play("cook_done", 1.0);
+                    snd.play("join", 1.0);
+                    show.write(LifeShow::new("⭐", At::Me, 2.6, 3.0, 1.3));
                     continue;
                 }
                 if let Some(p) = v.get("pantry") {
                     farm.set_pantry(p);
                 }
-                if let Some(w) = v.get("wallet").and_then(Value::as_u64) {
+                if let Some(w) = v.get("wallet").and_then(sky_protocol::json::js_u64) {
                     farm.set_coins(w);
                 }
                 let id = v.get("recipe").and_then(Value::as_str).unwrap_or_default().to_owned();
                 let Some(r) = cat.recipe(&id) else { continue };
-                let u = |k| v.get(k).and_then(Value::as_u64).unwrap_or(0);
+                let u = |k| v.get(k).and_then(sky_protocol::json::js_u64).unwrap_or(0);
                 let mut s = format!("{} {} pronto! +{} XP", r.ic, r.n, u("xp"));
                 if u("coins") > 0 {
                     s += &format!(" · +{}", coin(u("coins")));
@@ -301,6 +313,7 @@ fn receive(
                     snd.play("join", 0.9);
                 }
                 cook.slots.clear();
+                show.write(dish(&r.ic));
                 cook.dish = Some((id, DISH_S));
             }
             "supplyr" => {
@@ -320,8 +333,18 @@ fn receive(
                 }
             }
             "cookfx" => {
-                if let Some(st) = v.get("st").and_then(Value::as_u64) {
-                    log.push("", format!("⭐ Um jogador ganhou a {st}ª estrela de cozinheiro!"), true);
+                // outro jogador terminou uma receita: o prato aparece sobre a fogueira e o som vem com o volume da distância
+                let Some((_, name, d)) = v.get("id").and_then(Value::as_str).and_then(|id| who.find(id)) else {
+                    continue;
+                };
+                if let Some(st) = v.get("st").and_then(sky_protocol::json::js_u64) {
+                    log.push("", format!("⭐ {name} ganhou a {st}ª estrela de cozinheiro!"), true);
+                } else if let Some(r) = v.get("r").and_then(Value::as_str).and_then(|r| cat.recipe(r)) {
+                    show.write(dish(&r.ic));
+                    let vol = crate::sound::dvol(d);
+                    if vol > 0.03 {
+                        snd.play("cook_done", vol);
+                    }
                 }
             }
             _ => {}

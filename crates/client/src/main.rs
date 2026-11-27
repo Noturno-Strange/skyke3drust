@@ -30,6 +30,7 @@ mod player;
 mod recovery;
 mod settings;
 mod shot;
+mod show;
 mod social;
 mod sound;
 mod state;
@@ -96,6 +97,7 @@ fn main() {
         gift::GiftPlugin,
         pet::PetPlugin,
         sound::SoundPlugin,
+        show::ShowPlugin,
     ))
     .insert_resource(load_gestures(&assets))
     .insert_resource(load_editor_catalog(&assets))
@@ -114,7 +116,30 @@ fn main() {
     if let Some(after) = a.capture {
         app.add_plugins(shot::CapturePlugin { after, out: a.out.clone() });
     }
+    if std::env::var_os("SKY_DEBUG_INPUT").is_some() {
+        app.add_systems(Update, debug_input)
+            .add_observer(|p: On<bevy::picking::events::PointerPress>| info!("DBG press {:?}", p.entity))
+            .add_observer(|a: On<sky_ui::Activate>| info!("DBG activate {:?}", a.entity))
+            .add_observer(|c: On<bevy::picking::events::PointerClick>| info!("DBG click {:?}", c.entity))
+            .add_observer(|c: On<bevy::picking::events::PointerRelease>| info!("DBG release {:?}", c.entity));
+    }
     app.run();
+}
+
+fn debug_input(
+    f: Res<bevy::input_focus::InputFocus>,
+    mut k: MessageReader<bevy::input::keyboard::KeyboardInput>,
+    mut m: MessageReader<bevy::input::mouse::MouseButtonInput>,
+) {
+    if f.is_changed() {
+        info!("DBG foco {:?}", f.get());
+    }
+    for e in k.read() {
+        info!("DBG tecla {:?} {:?}", e.logical_key, e.state);
+    }
+    for e in m.read() {
+        info!("DBG mouse {:?}", e);
+    }
 }
 
 fn setup(
@@ -123,6 +148,7 @@ fn setup(
     mut load: MessageWriter<LoadWorld>,
     mut req: MessageWriter<ConnectRequest>,
     mut next: ResMut<NextState<Screen>>,
+    settings: Res<settings::Settings>,
 ) {
     // Mesma câmera do cliente web: perspectiva de 60° na vertical, de 0,1 a 600 m, sem tone mapping e saída sRGB.
     commands.spawn((
@@ -135,8 +161,12 @@ fn setup(
     ));
     if a.shot.is_some() {
         load.write(LoadWorld(a.world));
-    } else if let Some(server) = &a.server {
-        // linha de comando com servidor: entra direto, sem a tela inicial
+    } else if let Some(server) = &a.server
+        && !a.name.trim().is_empty()
+        && settings.adult
+        && settings.terms == menu::TERMS_VER
+    {
+        // linha de comando com servidor e nome (e os termos já aceitos): entra direto, sem a tela inicial
         req.write(ConnectRequest {
             server: server.clone(),
             name: a.name.clone(),

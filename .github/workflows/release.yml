@@ -1,6 +1,7 @@
 name: Release
 
-# Uma tag `vX.Y.Z` compila o cliente em modo release para Linux e Windows e publica os pacotes numa Release do GitHub.
+# Uma tag `vX.Y.Z` compila o cliente e o servidor em modo release para Linux e Windows e publica os pacotes numa Release do
+# GitHub. O pacote do servidor traz o executável e a pasta `web/` (o cliente do navegador).
 # Cada pacote traz o executável com `assets/` e `data/` ao lado (o cliente procura `assets/` junto do executável e o
 # catálogo em `assets/../data`), a licença e os créditos.
 on:
@@ -58,9 +59,58 @@ jobs:
           path: ${{ env.PKG }}
           if-no-files-found: error
 
+  server:
+    name: Servidor ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+            exe: skyke3d-server
+          - os: windows-latest
+            target: windows-x86_64
+            exe: skyke3d-server.exe
+    steps:
+      - uses: actions/checkout@v5
+      # o cliente do navegador vem do repositório original, no commit de referência da migração
+      - uses: actions/checkout@v5
+        with:
+          repository: Noturno-Strange/skyke3d
+          ref: 9d6ed71eb03e76557fd3257e0e6a4362312665cb
+          path: original
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p sky-server --bin skyke3d-server
+      - name: Montar o pacote do servidor
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="skyke3d-server-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p "$dir/web/vendor" "$dir/web/launcher"
+          cp "target/release/${{ matrix.exe }}" "$dir/"
+          cp original/index.html original/profile.html original/fazenda.html original/status.html original/privacidade.html "$dir/web/"
+          cp -r original/assets original/pwa "$dir/web/"
+          cp original/vendor/three-r186.min.js "$dir/web/vendor/"
+          cp original/launcher/VERSION "$dir/web/launcher/"
+          cp LICENSE THIRD-PARTY.md docs/servidor.md "$dir/"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip "$dir.zip" "$dir" > /dev/null
+            echo "PKG=$dir.zip" >> "$GITHUB_ENV"
+          else
+            tar czf "$dir.tar.gz" "$dir"
+            echo "PKG=$dir.tar.gz" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.target }}
+          path: ${{ env.PKG }}
+          if-no-files-found: error
+
   publish:
     name: Publicar a Release
-    needs: build
+    needs: [build, server]
     runs-on: ubuntu-latest
     permissions:
       contents: write
