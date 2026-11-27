@@ -137,12 +137,12 @@ pub struct FarmState {
 }
 
 fn u(v: &Value, k: &str) -> u64 {
-    v.get(k).and_then(Value::as_u64).unwrap_or(0)
+    v.get(k).and_then(sky_protocol::json::js_u64).unwrap_or(0)
 }
 
 fn counts(v: Option<&Value>) -> BTreeMap<String, u64> {
     v.and_then(Value::as_object)
-        .map(|o| o.iter().filter_map(|(k, n)| n.as_u64().map(|n| (k.clone(), n))).collect())
+        .map(|o| o.iter().filter_map(|(k, n)| sky_protocol::json::js_u64(n).map(|n| (k.clone(), n))).collect())
         .unwrap_or_default()
 }
 
@@ -368,7 +368,7 @@ const WHY: [(&str, &str); 17] = [
 fn why(m: &Value) -> String {
     let r = m.get("reason").and_then(Value::as_str).unwrap_or_default();
     if r == "descanso" {
-        let w = m.get("wait").and_then(Value::as_u64).unwrap_or(60).div_ceil(60);
+        let w = m.get("wait").and_then(sky_protocol::json::js_u64).unwrap_or(60).div_ceil(60);
         return format!("⏸ Descanso de {w} min: muitas ações seguidas, no mesmo ritmo. Seu progresso está guardado.");
     }
     WHY.iter().find(|(k, _)| *k == r).map_or("Não foi possível agora.", |(_, t)| t).to_owned()
@@ -482,7 +482,7 @@ fn receive(
                 let Some((e, name, _)) = m.raw.get("id").and_then(Value::as_str).and_then(|id| who.find(id)) else {
                     continue;
                 };
-                if let Some(sf) = m.raw.get("sf").and_then(Value::as_u64) {
+                if let Some(sf) = m.raw.get("sf").and_then(sky_protocol::json::js_u64) {
                     log.push("", format!("🌾 {name} começou a {sf}ª safra!"), true);
                 } else if let Some(c) = m.raw.get("c").and_then(Value::as_str).and_then(|c| cat.crop(c)) {
                     show.write(LifeShow::new(c.ic.clone(), At::Actor(e), 2.4, 2.5, 1.0));

@@ -294,7 +294,20 @@ fn s(v: &Value, k: &str) -> String {
     v.get(k).and_then(Value::as_str).unwrap_or_default().to_owned()
 }
 fn u(v: &Value, k: &str) -> u64 {
-    v.get(k).and_then(Value::as_u64).unwrap_or_default()
+    v.get(k).and_then(js_u64).unwrap_or_default()
+}
+
+/// Número inteiro não negativo como o JavaScript o vê: `50` e `50.0` são o mesmo número (o servidor original sempre
+/// escreve `50`, mas um servidor que escreva `50.0` não pode zerar a barra de nível).
+pub fn js_u64(v: &Value) -> Option<u64> {
+    v.as_u64().or_else(|| {
+        v.as_f64().filter(|f| f.is_finite() && *f >= 0.0 && *f <= 9_007_199_254_740_991.0).map(|f| f as u64)
+    })
+}
+
+/// Número inteiro com sinal, com a mesma tolerância de [`js_u64`].
+pub fn js_i64(v: &Value) -> Option<i64> {
+    v.as_i64().or_else(|| v.as_f64().filter(|f| f.is_finite() && f.abs() <= 9_007_199_254_740_991.0).map(|f| f as i64))
 }
 fn id(v: &Value, k: &str) -> Option<ActorId> {
     v.get(k).and_then(Value::as_str).and_then(|x| x.parse().ok())
@@ -329,7 +342,7 @@ impl ServerMsg {
             "item" => ServerMsg::Item {
                 id: need_id("id")?,
                 item: v.get("item").and_then(Value::as_str).map(str::to_owned),
-                use_: v.get("use").is_some_and(|x| x.as_bool().unwrap_or(x.as_u64() == Some(1))),
+                use_: v.get("use").is_some_and(|x| x.as_bool().unwrap_or(js_u64(x) == Some(1))),
             },
             "speak" => ServerMsg::Speak { id: need_id("id")?, v: v.get("v").and_then(Value::as_bool).unwrap_or(false) },
             "sys" => ServerMsg::Sys { text: s(&v, "text") },

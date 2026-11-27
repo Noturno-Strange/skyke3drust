@@ -363,7 +363,7 @@ impl Game {
         self.social.spoke.insert(fid, n);
         self.social.prune();
         let m = json!({"t": "gchat", "id": h, "name": self.my_name(cid), "text": clean, "at": n});
-        let s: Arc<str> = Arc::from(m.to_string());
+        let s: Arc<str> = Arc::from(crate::jsjson::to_string(&m));
         for o in self.soc_each() {
             self.send_raw_to(o, crate::game::Out::Text(s.clone()), s.len());
         }

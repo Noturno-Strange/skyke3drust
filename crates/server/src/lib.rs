@@ -21,6 +21,7 @@ pub mod health;
 pub mod http;
 pub mod identity;
 pub mod identity_ws;
+pub mod jsjson;
 pub mod levels;
 pub mod limits;
 pub mod listener;

@@ -149,7 +149,7 @@ impl Cook {
         })
     }
     fn set_state(&mut self, v: &Value) {
-        let u = |k| v.get(k).and_then(Value::as_u64).unwrap_or(0);
+        let u = |k| v.get(k).and_then(sky_protocol::json::js_u64).unwrap_or(0);
         self.lv = u("lv").max(1) as u32;
         self.xp = u("xp");
         self.lo = u("lo");
@@ -159,7 +159,7 @@ impl Cook {
         self.done = v
             .get("done")
             .and_then(Value::as_object)
-            .map(|o| o.iter().filter_map(|(k, n)| n.as_u64().map(|n| (k.clone(), n))).collect())
+            .map(|o| o.iter().filter_map(|(k, n)| sky_protocol::json::js_u64(n).map(|n| (k.clone(), n))).collect())
             .unwrap_or_default();
         self.badges = v
             .get("badges")
@@ -213,7 +213,7 @@ const WHY: [(&str, &str); 9] = [
 fn why(m: &Value) -> String {
     let r = m.get("reason").and_then(Value::as_str).unwrap_or_default();
     if r == "descanso" {
-        let w = m.get("wait").and_then(Value::as_u64).unwrap_or(60).div_ceil(60);
+        let w = m.get("wait").and_then(sky_protocol::json::js_u64).unwrap_or(60).div_ceil(60);
         return format!("⏸ Descanso de {w} min: muitas ações seguidas, no mesmo ritmo. Seu progresso está guardado.");
     }
     WHY.iter().find(|(k, _)| *k == r).map_or("Não foi possível cozinhar agora.", |(_, t)| t).to_owned()
@@ -269,7 +269,7 @@ fn receive(
                 if v.get("renew").is_some() {
                     cook.msg = format!(
                         "★ Estrela vermelha {}! Você voltou ao nível 1 e ganha +10% de experiência e +5% de moedas a cada estrela.",
-                        v.get("rank").and_then(Value::as_u64).unwrap_or(0)
+                        v.get("rank").and_then(sky_protocol::json::js_u64).unwrap_or(0)
                     );
                     snd.play("cook_done", 1.0);
                     snd.play("join", 1.0);
@@ -279,12 +279,12 @@ fn receive(
                 if let Some(p) = v.get("pantry") {
                     farm.set_pantry(p);
                 }
-                if let Some(w) = v.get("wallet").and_then(Value::as_u64) {
+                if let Some(w) = v.get("wallet").and_then(sky_protocol::json::js_u64) {
                     farm.set_coins(w);
                 }
                 let id = v.get("recipe").and_then(Value::as_str).unwrap_or_default().to_owned();
                 let Some(r) = cat.recipe(&id) else { continue };
-                let u = |k| v.get(k).and_then(Value::as_u64).unwrap_or(0);
+                let u = |k| v.get(k).and_then(sky_protocol::json::js_u64).unwrap_or(0);
                 let mut s = format!("{} {} pronto! +{} XP", r.ic, r.n, u("xp"));
                 if u("coins") > 0 {
                     s += &format!(" · +{}", coin(u("coins")));
@@ -337,7 +337,7 @@ fn receive(
                 let Some((_, name, d)) = v.get("id").and_then(Value::as_str).and_then(|id| who.find(id)) else {
                     continue;
                 };
-                if let Some(st) = v.get("st").and_then(Value::as_u64) {
+                if let Some(st) = v.get("st").and_then(sky_protocol::json::js_u64) {
                     log.push("", format!("⭐ {name} ganhou a {st}ª estrela de cozinheiro!"), true);
                 } else if let Some(r) = v.get("r").and_then(Value::as_str).and_then(|r| cat.recipe(r)) {
                     show.write(dish(&r.ic));

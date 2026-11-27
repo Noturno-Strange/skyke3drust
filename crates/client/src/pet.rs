@@ -113,8 +113,8 @@ impl std::fmt::Debug for Pet {
 impl Pet {
     fn set(&mut self, p: Value) {
         let genes = Genes::from_value(&p["genes"]);
-        let stage = p["stage"].as_u64().unwrap_or(0) as usize;
-        let cos = p["cos"].as_i64().unwrap_or(0);
+        let stage = sky_protocol::json::js_u64(&p["stage"]).unwrap_or(0) as usize;
+        let cos = sky_protocol::json::js_i64(&p["cos"]).unwrap_or(0);
         let mood = p["mood"]["state"].as_str().unwrap_or("idle");
         match self.anim.as_mut() {
             Some(a) if a.genes == genes => {
@@ -440,7 +440,7 @@ fn rebuild(
         }
         Some(pet) => {
             let s = |k: &str| pet[k].as_str().unwrap_or_default().to_owned();
-            let age = pet["age"].as_u64().unwrap_or(0);
+            let age = sky_protocol::json::js_u64(&pet["age"]).unwrap_or(0);
             out.push(txt(
                 &mut commands,
                 format!(
@@ -552,7 +552,7 @@ fn rebuild(
                 .id();
             let l = txt(&mut commands, "Visual:".into(), 13.0, 600);
             commands.entity(cos_row).add_child(l);
-            let cur = pet["cos"].as_i64().unwrap_or(0);
+            let cur = sky_protocol::json::js_i64(&pet["cos"]).unwrap_or(0);
             for i in pet["cosOk"].as_array().into_iter().flatten().filter_map(Value::as_i64) {
                 let b = button(&mut commands, &t, &f, COS.get(i as usize).copied().unwrap_or("?"), i == cur);
                 commands.entity(b).observe(move |_: On<Activate>, mut send: MessageWriter<SendRaw>| {
@@ -564,7 +564,7 @@ fn rebuild(
             // números, conquistas e soltar
             let st = &pet["stats"];
             let pl = |n: u64, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-            let u = |k: &str| st[k].as_u64().unwrap_or(0);
+            let u = |k: &str| sky_protocol::json::js_u64(&st[k]).unwrap_or(0);
             out.push(txt(
                 &mut commands,
                 [

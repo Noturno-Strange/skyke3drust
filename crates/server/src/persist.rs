@@ -22,7 +22,7 @@ pub fn write_json_atomic(file: &Path, obj: &Value, durable: bool) -> std::io::Re
     let mut tmp = file.as_os_str().to_owned();
     tmp.push(".tmp");
     let tmp = std::path::PathBuf::from(tmp);
-    let data = serde_json::to_vec(obj).map_err(std::io::Error::other)?;
+    let data = crate::jsjson::to_string(obj).into_bytes();
     {
         let mut o = std::fs::OpenOptions::new();
         o.write(true).create(true).truncate(true);

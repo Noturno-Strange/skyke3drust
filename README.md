@@ -42,6 +42,10 @@ cargo run --release -p sky-client --bin skyke3d -- --server http://localhost:300
 cargo run --release -p sky-client --bin skyke3d -- --server http://localhost:3000 --name Bia --join ABCDE-FGHJK
 ```
 
+Como no navegador, só se entra numa sala depois de confirmar ter 18 anos ou mais e aceitar os Termos de Uso e a Política
+de Privacidade (seção **4 · Termos** da tela inicial; o documento vem do próprio servidor, em `/termos`). Enquanto isso
+não foi feito, `--server` e `--name` só preenchem a tela inicial; depois do aceite, entram direto na sala.
+
 Mundos: `amazora`, `cerron`, `atlanthia`, `caatara`, `panthara`, `pamphora`.
 
 ## Estrutura

@@ -472,7 +472,7 @@ impl Game {
                     .filter(|p| p.id != me && !p.bot && p.ready && p.online && r.kar.iter().any(|k| k.id == p.id))
                     .filter_map(|p| p.conn)
                     .collect();
-                let s: std::sync::Arc<str> = std::sync::Arc::from(o.to_string());
+                let s: std::sync::Arc<str> = std::sync::Arc::from(crate::jsjson::to_string(&o));
                 for c in to {
                     self.send_raw_to(c, Out::Text(s.clone()), s.len());
                 }

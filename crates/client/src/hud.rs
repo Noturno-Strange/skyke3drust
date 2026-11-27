@@ -18,7 +18,8 @@ impl Plugin for HudPlugin {
         app.init_resource::<ChatTab>()
             .init_resource::<GlobalChat>()
             .add_systems(OnEnter(Screen::Playing), spawn_hud)
-            .add_systems(OnExit(Screen::Playing), (despawn::<HudRoot>, despawn::<NameTag>))
+            .add_systems(OnExit(Screen::Playing), (despawn::<HudRoot>, despawn::<NameTag>, forget_tags))
+            .add_systems(Update, (spawn_tags, place_tags, tag_colors, tag_names).run_if(in_state(Screen::Menu)))
             .add_systems(
                 Update,
                 (
@@ -28,6 +29,7 @@ impl Plugin for HudPlugin {
                     spawn_tags,
                     place_tags,
                     tag_colors,
+                    tag_names,
                     tag_emotes,
                     stop_gesture_on_walk,
                 )
@@ -337,6 +339,27 @@ fn refresh_room(s: Res<Session>, mut q: Query<&mut Text, With<RoomText>>) {
     };
     for mut t in &mut q {
         t.0.clone_from(&txt);
+    }
+}
+
+/// Nome trocado (o meu na tela inicial, ou um `rename`): atualiza o rótulo.
+fn tag_names(names: Query<&ActorName, Changed<ActorName>>, mut tags: Query<(&NameTagText, &mut Text)>) {
+    if names.is_empty() {
+        return;
+    }
+    for (tag, mut t) in &mut tags {
+        if let Ok(n) = names.get(tag.0)
+            && t.0 != n.0
+        {
+            t.0.clone_from(&n.0);
+        }
+    }
+}
+
+/// Os rótulos foram apagados ao sair da sala: os avatares que ficam (o meu) ganham um novo na tela inicial.
+fn forget_tags(mut commands: Commands, q: Query<Entity, With<HasTag>>) {
+    for e in &q {
+        commands.entity(e).remove::<HasTag>();
     }
 }
 

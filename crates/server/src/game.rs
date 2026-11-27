@@ -639,7 +639,7 @@ impl Game {
     }
 
     pub fn send(&mut self, cid: u64, m: &Value) {
-        let s: Arc<str> = Arc::from(m.to_string());
+        let s: Arc<str> = Arc::from(crate::jsjson::to_string(m));
         let n = s.len();
         self.send_raw_to(cid, Out::Text(s), n);
     }
@@ -657,7 +657,7 @@ impl Game {
         if to.is_empty() {
             return;
         }
-        let s: Arc<str> = Arc::from(m.to_string());
+        let s: Arc<str> = Arc::from(crate::jsjson::to_string(m));
         for c in to {
             self.send_raw_to(c, Out::Text(s.clone()), s.len());
         }

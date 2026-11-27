@@ -198,12 +198,14 @@ fn receive(
             };
         match m.t.as_str() {
             "health" => {
-                med.lv = v.get("lv").and_then(Value::as_u64).unwrap_or(1);
-                med.helped = v.get("helped").and_then(Value::as_u64).unwrap_or(0);
+                med.lv = v.get("lv").and_then(sky_protocol::json::js_u64).unwrap_or(1);
+                med.helped = v.get("helped").and_then(sky_protocol::json::js_u64).unwrap_or(0);
                 med.meds = v
                     .get("meds")
                     .and_then(Value::as_object)
-                    .map(|o| o.iter().filter_map(|(k, n)| n.as_u64().map(|n| (k.clone(), n))).collect())
+                    .map(|o| {
+                        o.iter().filter_map(|(k, n)| sky_protocol::json::js_u64(n).map(|n| (k.clone(), n))).collect()
+                    })
                     .unwrap_or_default();
                 med.me = Health::from_value(v);
                 if let Ok((e, _)) = me.single() {
@@ -228,10 +230,14 @@ fn receive(
                     med.meds = st
                         .get("meds")
                         .and_then(Value::as_object)
-                        .map(|o| o.iter().filter_map(|(k, n)| n.as_u64().map(|n| (k.clone(), n))).collect())
+                        .map(|o| {
+                            o.iter()
+                                .filter_map(|(k, n)| sky_protocol::json::js_u64(n).map(|n| (k.clone(), n)))
+                                .collect()
+                        })
                         .unwrap_or_default();
-                    med.lv = st.get("lv").and_then(Value::as_u64).unwrap_or(med.lv);
-                    med.helped = st.get("helped").and_then(Value::as_u64).unwrap_or(med.helped);
+                    med.lv = st.get("lv").and_then(sky_protocol::json::js_u64).unwrap_or(med.lv);
+                    med.helped = st.get("helped").and_then(sky_protocol::json::js_u64).unwrap_or(med.helped);
                 }
                 let ok = v.get("ok").and_then(Value::as_bool).unwrap_or(false);
                 let i = v.get("i").and_then(Value::as_str).unwrap_or_default();

@@ -255,7 +255,7 @@ fn json_resp(site: &Site, status: u16, v: &Value, head: bool) -> Response<Body> 
         site,
         status,
         "application/json; charset=utf-8",
-        v.to_string().into_bytes(),
+        crate::jsjson::to_string(v).into_bytes(),
         &[("Cache-Control", "no-store".into()), ("X-Robots-Tag", "noindex".into())],
         head,
     )

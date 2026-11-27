@@ -20,7 +20,8 @@ impl Plugin for PlayerPlugin {
             (
                 click_dest.run_if(in_state(crate::state::Screen::Playing)),
                 walk.run_if(in_state(crate::state::Screen::Playing)),
-                follow_camera,
+                follow_camera.run_if(not(in_state(crate::state::Screen::Menu))),
+                menu_camera.run_if(in_state(crate::state::Screen::Menu)),
                 interpolate_system,
             )
                 .chain(),
@@ -258,6 +259,36 @@ pub fn ground_hit(o: Vec3, d: Vec3) -> Option<Vec2> {
     }
     let t = -o.y / d.y;
     (t > 0.0).then(|| Vec2::new(o.x + d.x * t, o.z + d.z * t))
+}
+
+/// Tela inicial (o `else` do laço de `app-ui.js`): o avatar gira devagar à direita do painel e a câmera balança de leve.
+/// Em tela estreita (até 700 px) o avatar fica no meio, mais perto.
+fn menu_camera(
+    time: Res<Time<Real>>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    mut me: Query<(&mut Transform, &mut Me), Without<Camera3d>>,
+    mut cam: Query<&mut Transform, With<Camera3d>>,
+    shot: Option<Res<crate::shot::ShotActive>>,
+) {
+    if shot.is_some() {
+        return;
+    }
+    let (Ok((mut me_t, mut me)), Ok(mut cam)) = (me.single_mut(), cam.single_mut()) else { return };
+    let t = time.elapsed_secs();
+    let a = t * 0.15;
+    let (w, h) = windows.single().map_or((1280.0, 720.0), |w| (w.width(), w.height()));
+    if w <= 700.0 {
+        cam.translation = Vec3::new(a.sin() * 1.2, 2.3, 12.9);
+        cam.look_at(Vec3::new(0.0, -1.1, 4.9), Vec3::Y);
+        me_t.translation = Vec3::new(0.0, 0.0, 4.9);
+    } else {
+        let far = (1.25 - w / h.max(1.0)).max(0.0) * 6.0;
+        cam.translation = Vec3::new(a.sin() * 1.5, 2.4, 10.9 + far);
+        cam.look_at(Vec3::new(-0.4, 1.2, 4.9), Vec3::Y);
+        me_t.translation = Vec3::new(2.2, 0.0, 4.9);
+    }
+    me.moving = false;
+    me_t.rotation = Quat::from_rotation_y(t * 0.6);
 }
 
 /// Câmera do jogo: 9,2 m atrás e 4,8 m acima, olhando 3 m à frente do avatar, com suavização exponencial.

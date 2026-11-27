@@ -20,7 +20,8 @@ Na primeira execução ele cria:
 | `web/` | o cliente do navegador (vem no pacote da Release); sem ela o servidor não sobe |
 
 Depois é só abrir `http://IP-DO-SERVIDOR:3000` no navegador, ou entrar pelo cliente nativo com
-`skyke3d --server http://IP-DO-SERVIDOR:3000 --name Ana`.
+`skyke3d --server http://IP-DO-SERVIDOR:3000 --name Ana` (na primeira vez a tela inicial pede a confirmação de
+idade e o aceite dos termos, como no navegador).
 
 ## `server.properties`
 

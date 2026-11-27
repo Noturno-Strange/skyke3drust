@@ -42,11 +42,29 @@ pub struct Settings {
     pub amb: f32,
     pub mus: f32,
     pub music: bool,
+    /// Último nome usado (o `cfg.name` salvo do original).
+    pub name: String,
+    /// Confirmou ter 18 anos ou mais (`skyke_adult`).
+    pub adult: bool,
+    /// Versão dos Termos de Uso aceita (`skyke_terms`).
+    pub terms: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { ui: 1.0, br: 1.0, light: false, hc: false, sfx: 0.8, amb: 0.7, mus: 0.6, music: true }
+        Self {
+            ui: 1.0,
+            br: 1.0,
+            light: false,
+            hc: false,
+            sfx: 0.8,
+            amb: 0.7,
+            mus: 0.6,
+            music: true,
+            adult: false,
+            terms: String::new(),
+            name: String::new(),
+        }
     }
 }
 
